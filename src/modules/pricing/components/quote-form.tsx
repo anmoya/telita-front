@@ -141,7 +141,7 @@ type QuoteFormProps = {
 };
 
 export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProps) {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/v1";
+  const apiUrl = process.env.NEXT_PUBLIC_TELITA_API_URL ?? "http://localhost:3001/v1";
 
   const [heightM, setHeightM] = useState("2.0");
   const [widthM, setWidthM] = useState("2.0");

@@ -24,7 +24,7 @@ const MENU_ITEMS: Array<{ key: MenuKey; label: string }> = [
 ];
 
 export default function HomePage() {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/v1";
+  const apiUrl = process.env.NEXT_PUBLIC_TELITA_API_URL ?? "http://localhost:3001/v1";
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [activeMenu, setActiveMenu] = useState<MenuKey>("dashboard");

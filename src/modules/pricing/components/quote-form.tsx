@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../shared/ui/primitives/button";
 import { Input } from "../../../shared/ui/primitives/input";
 import { Dialog } from "../../../shared/ui/primitives/dialog";
+import { Spinner } from "../../../shared/ui/primitives/spinner";
+import { TableSkeleton } from "../../../shared/ui/primitives/table-skeleton";
 import { formatLocalDateTime } from "../../../shared/time/date-service";
 
 type MenuKey = "dashboard" | "pricing" | "sales" | "cuts" | "scraps" | "labels" | "audit" | "settings";
@@ -192,6 +194,11 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   const [pendingScraps, setPendingScraps] = useState<PendingScrapRow[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditRow[]>([]);
 
+  // Loading states
+  const [loadingMenu, setLoadingMenu] = useState(false);
+  const [loadingActionId, setLoadingActionId] = useState<string | null>(null);
+  const [loadingModal, setLoadingModal] = useState(false);
+
   const linearMeters = useMemo(() => Number(heightM || 0) * Number(quantity || 0), [heightM, quantity]);
 
   // Load flow rules on mount so cuts section is ready
@@ -224,32 +231,46 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   }
 
   async function loadDashboard() {
-    const [kpisRes, pendingRes, auditRes] = await Promise.all([
-      authedFetch(`${apiUrl}/dashboard/kpis?branchCode=MAIN`),
-      authedFetch(`${apiUrl}/dashboard/pending-scraps?branchCode=MAIN&limit=10`),
-      authedFetch(`${apiUrl}/audit?branchCode=MAIN&limit=8`)
-    ]);
-
-    if (kpisRes.ok) setDashboardKpis((await kpisRes.json()) as DashboardKpis);
-    if (pendingRes.ok) setPendingScraps((await pendingRes.json()) as PendingScrapRow[]);
-    if (auditRes.ok) setAuditEvents((await auditRes.json()) as AuditRow[]);
+    setLoadingMenu(true);
+    try {
+      const [kpisRes, pendingRes, auditRes] = await Promise.all([
+        authedFetch(`${apiUrl}/dashboard/kpis?branchCode=MAIN`),
+        authedFetch(`${apiUrl}/dashboard/pending-scraps?branchCode=MAIN&limit=10`),
+        authedFetch(`${apiUrl}/audit?branchCode=MAIN&limit=8`)
+      ]);
+      if (kpisRes.ok) setDashboardKpis((await kpisRes.json()) as DashboardKpis);
+      if (pendingRes.ok) setPendingScraps((await pendingRes.json()) as PendingScrapRow[]);
+      if (auditRes.ok) setAuditEvents((await auditRes.json()) as AuditRow[]);
+    } finally {
+      setLoadingMenu(false);
+    }
   }
 
   async function loadAudit() {
-    const auditRes = await authedFetch(`${apiUrl}/audit?branchCode=MAIN&limit=50`);
-    if (auditRes.ok) setAuditEvents((await auditRes.json()) as AuditRow[]);
+    setLoadingMenu(true);
+    try {
+      const auditRes = await authedFetch(`${apiUrl}/audit?branchCode=MAIN&limit=50`);
+      if (auditRes.ok) setAuditEvents((await auditRes.json()) as AuditRow[]);
+    } finally {
+      setLoadingMenu(false);
+    }
   }
 
   async function loadCutJobs() {
-    const statusQuery = cutFilterStatus === "ALL" ? "" : `&status=${encodeURIComponent(cutFilterStatus)}`;
-    const response = await authedFetch(`${apiUrl}/cut-jobs?branchCode=MAIN${statusQuery}`);
-    if (!response.ok) {
-      setCutsStatus(`Error listando cortes: HTTP ${response.status}`);
-      return;
+    setLoadingMenu(true);
+    try {
+      const statusQuery = cutFilterStatus === "ALL" ? "" : `&status=${encodeURIComponent(cutFilterStatus)}`;
+      const response = await authedFetch(`${apiUrl}/cut-jobs?branchCode=MAIN${statusQuery}`);
+      if (!response.ok) {
+        setCutsStatus(`Error listando cortes: HTTP ${response.status}`);
+        return;
+      }
+      const rows = (await response.json()) as CutJobRow[];
+      setCutJobs(rows);
+      setCutsStatus("");
+    } finally {
+      setLoadingMenu(false);
     }
-    const rows = (await response.json()) as CutJobRow[];
-    setCutJobs(rows);
-    setCutsStatus(`Cortes cargados: ${rows.length}`);
   }
 
   async function loadFlowRules() {
@@ -265,7 +286,32 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
       setModalLocationCode("");
       setModalStatus("");
     } else {
-      await doMarkCut(cutJobId);
+      setLoadingActionId(cutJobId);
+      try {
+        await doMarkCut(cutJobId);
+      } finally {
+        setLoadingActionId(null);
+      }
+    }
+  }
+
+  async function handleModalMarkCut() {
+    if (activeModal?.type !== "pre-cut-location") return;
+    setLoadingModal(true);
+    try {
+      await doMarkCut(activeModal.cutJobId, modalLocationCode);
+    } finally {
+      setLoadingModal(false);
+    }
+  }
+
+  async function handleModalAssignLocation() {
+    if (activeModal?.type !== "post-cut-location" && activeModal?.type !== "assign-scrap-location") return;
+    setLoadingModal(true);
+    try {
+      await doAssignLocation(activeModal.scrapId, modalLocationCode);
+    } finally {
+      setLoadingModal(false);
     }
   }
 
@@ -316,7 +362,6 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
 
   // Assign location to a scrap (used by both post-cut and scraps-table dialogs)
   async function doAssignLocation(scrapId: string, locationCode: string) {
-    setModalStatus("Guardando...");
     const response = await authedFetch(`${apiUrl}/scraps/${scrapId}/assign-location`, {
       method: "PATCH",
       body: JSON.stringify({ locationCode })
@@ -333,41 +378,54 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
 
   async function handleBatchLabels() {
     if (!batchSaleId) return;
-    setLabelStatus("Generando etiquetas...");
+    setLoadingMenu(true);
     setBatchResults([]);
-    const response = await authedFetch(`${apiUrl}/labels/sale/${batchSaleId}/batch`, {
-      method: "POST",
-      body: JSON.stringify({})
-    });
-    if (!response.ok) {
-      const body = (await response.json()) as { message?: string };
-      setLabelStatus(body.message ?? `Error: HTTP ${response.status}`);
-      return;
+    try {
+      const response = await authedFetch(`${apiUrl}/labels/sale/${batchSaleId}/batch`, {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { message?: string };
+        setLabelStatus(body.message ?? `Error: HTTP ${response.status}`);
+        return;
+      }
+      const data = (await response.json()) as { total: number; labels: BatchLabelResult[] };
+      setBatchResults(data.labels);
+      setLabelStatus(`${data.total} etiqueta(s) generada(s).`);
+    } finally {
+      setLoadingMenu(false);
     }
-    const data = (await response.json()) as { total: number; labels: BatchLabelResult[] };
-    setBatchResults(data.labels);
-    setLabelStatus(`${data.total} etiqueta(s) generada(s).`);
   }
 
   async function handleListLabels() {
-    const response = await authedFetch(`${apiUrl}/labels?branchCode=MAIN`);
-    if (!response.ok) return;
-    setLabelList((await response.json()) as LabelRow[]);
+    setLoadingMenu(true);
+    try {
+      const response = await authedFetch(`${apiUrl}/labels?branchCode=MAIN`);
+      if (!response.ok) return;
+      setLabelList((await response.json()) as LabelRow[]);
+    } finally {
+      setLoadingMenu(false);
+    }
   }
 
   async function handleUpdateFlowRules(stage: ScrapRequiredAtStage) {
-    setSettingsStatus("Guardando...");
-    const response = await authedFetch(`${apiUrl}/settings/flow-rules`, {
-      method: "PUT",
-      body: JSON.stringify({ scrapRequiredAtStage: stage })
-    });
-    if (!response.ok) {
-      const body = (await response.json()) as { message?: string };
-      setSettingsStatus(body.message ?? `Error: HTTP ${response.status}`);
-      return;
+    setLoadingActionId(stage);
+    try {
+      const response = await authedFetch(`${apiUrl}/settings/flow-rules`, {
+        method: "PUT",
+        body: JSON.stringify({ scrapRequiredAtStage: stage })
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { message?: string };
+        setSettingsStatus(body.message ?? `Error: HTTP ${response.status}`);
+        return;
+      }
+      setFlowRules({ scrapRequiredAtStage: stage });
+      setSettingsStatus(`Regla actualizada: ${stage}`);
+    } finally {
+      setLoadingActionId(null);
     }
-    setFlowRules({ scrapRequiredAtStage: stage });
-    setSettingsStatus(`Regla actualizada: ${stage}`);
   }
 
   async function handleFetchMatches(saleId: string, line: SaleLineRow) {
@@ -388,72 +446,98 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
 
   async function handleAllocate(scrapId: string) {
     if (!activeLine || !activeSaleIdForAlloc) return;
-    const response = await authedFetch(
-      `${apiUrl}/sales/${activeSaleIdForAlloc}/lines/${activeLine.id}/allocate-scrap`,
-      { method: "POST", body: JSON.stringify({ scrapId }) }
-    );
-    if (!response.ok) {
-      const body = (await response.json()) as { message?: string };
-      setSuggestionStatus(body.message ?? `Error asignando: HTTP ${response.status}`);
-      return;
+    setLoadingActionId(scrapId);
+    try {
+      const response = await authedFetch(
+        `${apiUrl}/sales/${activeSaleIdForAlloc}/lines/${activeLine.id}/allocate-scrap`,
+        { method: "POST", body: JSON.stringify({ scrapId }) }
+      );
+      if (!response.ok) {
+        const body = (await response.json()) as { message?: string };
+        setSuggestionStatus(body.message ?? `Error asignando: HTTP ${response.status}`);
+        return;
+      }
+      setSuggestionStatus(`Retazo ${scrapId.slice(0, 8)} asignado a linea.`);
+      setScrapSuggestions([]);
+      setActiveLine(null);
+      await handleListSales();
+    } finally {
+      setLoadingActionId(null);
     }
-    setSuggestionStatus(`Retazo ${scrapId.slice(0, 8)} asignado a linea.`);
-    setScrapSuggestions([]);
-    setActiveLine(null);
-    await handleListSales();
   }
 
   async function handleRelease(saleId: string, saleLineId: string) {
-    const response = await authedFetch(
-      `${apiUrl}/sales/${saleId}/lines/${saleLineId}/allocate-scrap`,
-      { method: "DELETE" }
-    );
-    if (!response.ok) {
-      const body = (await response.json()) as { message?: string };
-      setSalesStatus(body.message ?? `Error liberando: HTTP ${response.status}`);
-      return;
+    setLoadingActionId(saleLineId);
+    try {
+      const response = await authedFetch(
+        `${apiUrl}/sales/${saleId}/lines/${saleLineId}/allocate-scrap`,
+        { method: "DELETE" }
+      );
+      if (!response.ok) {
+        const body = (await response.json()) as { message?: string };
+        setSalesStatus(body.message ?? `Error liberando: HTTP ${response.status}`);
+        return;
+      }
+      setSalesStatus("Asignacion liberada.");
+      await handleListSales();
+    } finally {
+      setLoadingActionId(null);
     }
-    setSalesStatus("Asignacion liberada.");
-    await handleListSales();
   }
 
   async function handleConfirmSaleById(id: string) {
-    const response = await authedFetch(`${apiUrl}/sales/${id}/confirm`, { method: "POST" });
-    if (!response.ok) {
-      const body = (await response.json()) as { message?: string };
-      setSalesStatus(body.message ?? `Error HTTP ${response.status}`);
-      return;
+    setLoadingActionId(id);
+    try {
+      const response = await authedFetch(`${apiUrl}/sales/${id}/confirm`, { method: "POST" });
+      if (!response.ok) {
+        const body = (await response.json()) as { message?: string };
+        setSalesStatus(body.message ?? `Error HTTP ${response.status}`);
+        return;
+      }
+      setSalesStatus("Venta confirmada.");
+      await handleListSales();
+    } finally {
+      setLoadingActionId(null);
     }
-    setSalesStatus("Venta confirmada.");
-    await handleListSales();
   }
 
   async function handleCancelSaleById(id: string) {
-    const response = await authedFetch(`${apiUrl}/sales/${id}/cancel`, {
-      method: "POST",
-      body: JSON.stringify({})
-    });
-    if (!response.ok) {
-      const body = (await response.json()) as { message?: string };
-      setSalesStatus(body.message ?? `Error HTTP ${response.status}`);
-      return;
+    setLoadingActionId(id);
+    try {
+      const response = await authedFetch(`${apiUrl}/sales/${id}/cancel`, {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { message?: string };
+        setSalesStatus(body.message ?? `Error HTTP ${response.status}`);
+        return;
+      }
+      setSalesStatus("Venta anulada.");
+      await handleListSales();
+    } finally {
+      setLoadingActionId(null);
     }
-    setSalesStatus("Venta anulada.");
-    await handleListSales();
   }
 
   async function handleReprintById(id: string) {
-    await authedFetch(`${apiUrl}/labels/${id}/reprint`, {
-      method: "POST",
-      body: JSON.stringify({})
-    });
-    setLabelStatus("Reimpresion registrada.");
-    await handleListLabels();
+    setLoadingActionId(id);
+    try {
+      await authedFetch(`${apiUrl}/labels/${id}/reprint`, {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      setLabelStatus("Reimpresion registrada.");
+      await handleListLabels();
+    } finally {
+      setLoadingActionId(null);
+    }
   }
 
   async function handleCalculate() {
-    setStatus("Calculando...");
+    setStatus("");
     setQuoteResult(null);
+    setLoadingActionId("calculate");
     try {
       const response = await authedFetch(`${apiUrl}/pricing/quote`, {
         method: "POST",
@@ -472,6 +556,8 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
       setStatus("Cotizacion guardada.");
     } catch (error) {
       setStatus(`Error al cotizar: ${String(error)}`);
+    } finally {
+      setLoadingActionId(null);
     }
   }
 
@@ -513,9 +599,14 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   }
 
   async function handleListSales() {
-    const response = await authedFetch(`${apiUrl}/sales?branchCode=MAIN`);
-    const data: SaleRow[] = await response.json();
-    setSales(data);
+    setLoadingMenu(true);
+    try {
+      const response = await authedFetch(`${apiUrl}/sales?branchCode=MAIN`);
+      const data: SaleRow[] = await response.json();
+      setSales(data);
+    } finally {
+      setLoadingMenu(false);
+    }
   }
 
   async function handleRegisterScrapFromQuote() {
@@ -531,9 +622,14 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   }
 
   async function handleListScraps() {
-    const response = await authedFetch(`${apiUrl}/scraps?branchCode=MAIN`);
-    const data: ScrapRow[] = await response.json();
-    setScraps(data);
+    setLoadingMenu(true);
+    try {
+      const response = await authedFetch(`${apiUrl}/scraps?branchCode=MAIN`);
+      const data: ScrapRow[] = await response.json();
+      setScraps(data);
+    } finally {
+      setLoadingMenu(false);
+    }
   }
 
   async function handleCreateQuoteLabel() {
@@ -577,10 +673,18 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
         <article className="flow-card">
           <p className="flow-title">Dashboard Operativo</p>
           <div className="inline-actions">
-            <Button onClick={loadDashboard}>Refrescar</Button>
+            <Button onClick={loadDashboard} disabled={loadingMenu}>
+              {loadingMenu ? <Spinner size="sm" /> : "Refrescar"}
+            </Button>
           </div>
 
-          {dashboardKpis ? (
+          {loadingMenu && !dashboardKpis ? (
+            <div className="kpi-grid">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <article key={i} className="kpi-card"><span className="skeleton-cell" style={{ width: "80%" }} /><strong><span className="skeleton-cell" style={{ width: "40%" }} /></strong></article>
+              ))}
+            </div>
+          ) : dashboardKpis ? (
             <div className="kpi-grid">
               <article className="kpi-card"><span>Cotizaciones Hoy</span><strong>{dashboardKpis.quotesCreatedToday}</strong></article>
               <article className="kpi-card"><span>Ventas Confirmadas</span><strong>{dashboardKpis.salesConfirmedToday}</strong></article>
@@ -588,9 +692,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
               <article className="kpi-card"><span>Retazos Pendientes</span><strong>{dashboardKpis.pendingScraps}</strong></article>
               <article className="kpi-card"><span>Etiquetas Hoy</span><strong>{dashboardKpis.labelsPrintedToday}</strong></article>
             </div>
-          ) : (
-            <p className="status-note">Cargando KPIs...</p>
-          )}
+          ) : null}
 
           <p className="flow-title">Retazos pendientes</p>
           {pendingScraps.length > 0 ? (
@@ -659,7 +761,14 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
           <label className="field"><span>Cantidad</span><Input value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
           <p className="status-note">Metros lineales estimados: {linearMeters.toFixed(2)}</p>
           <p className="status-note">{status}</p>
-          <div className="inline-actions"><Button onClick={handleCalculate}>Calcular</Button><Button variant="secondary" onClick={handleListQuotes}>Listar Cotizaciones</Button></div>
+          <div className="inline-actions">
+            <Button onClick={handleCalculate} disabled={loadingActionId === "calculate"}>
+              {loadingActionId === "calculate" ? <Spinner size="sm" /> : "Calcular"}
+            </Button>
+            <Button variant="secondary" onClick={handleListQuotes} disabled={loadingMenu}>
+              {loadingMenu ? <Spinner size="sm" /> : "Listar Cotizaciones"}
+            </Button>
+          </div>
           {quoteResult ? <pre className="code-block">{JSON.stringify(quoteResult, null, 2)}</pre> : null}
           {quotes.length > 0 ? (
             <table className="data-table"><thead><tr><th>ID</th><th>Medida</th><th>Cant.</th><th>Total</th><th>Fecha</th></tr></thead><tbody>
@@ -677,11 +786,15 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
           <p className="status-note">{salesStatus}</p>
           <p className="status-note">SaleId activo: {saleId ? saleId.slice(0, 8) : "ninguno — click en una fila para seleccionar"}</p>
           <div className="inline-actions">
-            <Button variant="secondary" onClick={handleCreateSaleDraft}>Crear Draft</Button>
-            <Button variant="secondary" onClick={handleAddSaleLine} disabled={!saleId}>Agregar Linea</Button>
-            <Button variant="secondary" onClick={handleListSales}>Refrescar</Button>
+            <Button variant="secondary" onClick={handleCreateSaleDraft} disabled={loadingMenu}>Crear Draft</Button>
+            <Button variant="secondary" onClick={handleAddSaleLine} disabled={!saleId || loadingMenu}>Agregar Linea</Button>
+            <Button variant="secondary" onClick={handleListSales} disabled={loadingMenu}>
+              {loadingMenu ? <Spinner size="sm" /> : "Refrescar"}
+            </Button>
           </div>
-          {sales.length > 0 ? (
+          {loadingMenu && sales.length === 0 ? (
+            <TableSkeleton rows={4} cols={5} />
+          ) : sales.length > 0 ? (
             <>
               <table className="data-table">
                 <thead>
@@ -697,11 +810,19 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                       <td>
                         {row.status === "DRAFT" ? (
                           <div className="inline-actions" onClick={(e) => e.stopPropagation()}>
-                            <Button variant="secondary" onClick={() => void handleConfirmSaleById(row.id)}>
-                              Confirmar
+                            <Button
+                              variant="secondary"
+                              onClick={() => void handleConfirmSaleById(row.id)}
+                              disabled={loadingActionId === row.id}
+                            >
+                              {loadingActionId === row.id ? <Spinner size="sm" /> : "Confirmar"}
                             </Button>
-                            <Button variant="secondary" onClick={() => void handleCancelSaleById(row.id)}>
-                              Anular
+                            <Button
+                              variant="secondary"
+                              onClick={() => void handleCancelSaleById(row.id)}
+                              disabled={loadingActionId === row.id}
+                            >
+                              {loadingActionId === row.id ? <Spinner size="sm" /> : "Anular"}
                             </Button>
                           </div>
                         ) : (
@@ -733,13 +854,17 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                             <td>{line.allocatedScrapId ? `✓ ${line.allocatedScrapId.slice(0, 8)}` : "—"}</td>
                             <td>
                               {selectedSale.status === "DRAFT" && !line.allocatedScrapId ? (
-                                <Button variant="secondary" onClick={() => void handleFetchMatches(saleId, line)}>
+                                <Button variant="secondary" onClick={() => void handleFetchMatches(saleId, line)} disabled={!!loadingActionId}>
                                   Buscar Retazo
                                 </Button>
                               ) : null}
                               {selectedSale.status === "DRAFT" && line.allocatedScrapId ? (
-                                <Button variant="secondary" onClick={() => void handleRelease(saleId, line.id)}>
-                                  Liberar
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => void handleRelease(saleId, line.id)}
+                                  disabled={loadingActionId === line.id}
+                                >
+                                  {loadingActionId === line.id ? <Spinner size="sm" /> : "Liberar"}
                                 </Button>
                               ) : null}
                             </td>
@@ -764,8 +889,12 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                                   <td>{s.excessAreaM2}</td>
                                   <td>{s.locationCode ?? "—"}</td>
                                   <td>
-                                    <Button variant="secondary" onClick={() => void handleAllocate(s.id)}>
-                                      Asignar
+                                    <Button
+                                      variant="secondary"
+                                      onClick={() => void handleAllocate(s.id)}
+                                      disabled={loadingActionId === s.id}
+                                    >
+                                      {loadingActionId === s.id ? <Spinner size="sm" /> : "Asignar"}
                                     </Button>
                                   </td>
                                 </tr>
@@ -811,9 +940,13 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
             <Button variant={cutFilterStatus === "ALL" ? "primary" : "secondary"} onClick={() => setCutFilterStatus("ALL")}>
               Todos
             </Button>
-            <Button onClick={loadCutJobs}>Refrescar</Button>
+            <Button onClick={loadCutJobs} disabled={loadingMenu}>
+              {loadingMenu ? <Spinner size="sm" /> : "Refrescar"}
+            </Button>
           </div>
-          {cutJobs.length > 0 ? (
+          {loadingMenu && cutJobs.length === 0 ? (
+            <TableSkeleton rows={5} cols={8} />
+          ) : cutJobs.length > 0 ? (
             <table className="data-table">
               <thead>
                 <tr><th>ID</th><th>Venta</th><th>SKU</th><th>Medida</th><th>Cant.</th><th>Estado</th><th>Cortado</th><th>Accion</th></tr>
@@ -830,8 +963,12 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                     <td>{row.cutAt ? formatLocalDateTime(row.cutAt) : "-"}</td>
                     <td>
                       {row.status === "PENDING" || row.status === "IN_PROGRESS" ? (
-                        <Button variant="secondary" onClick={() => void onMarkCutClick(row.id)}>
-                          Marcar Cortado
+                        <Button
+                          variant="secondary"
+                          onClick={() => void onMarkCutClick(row.id)}
+                          disabled={loadingActionId === row.id}
+                        >
+                          {loadingActionId === row.id ? <Spinner size="sm" /> : "Marcar Cortado"}
                         </Button>
                       ) : (
                         "-"
@@ -855,9 +992,13 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
             <Button variant="secondary" onClick={handleRegisterScrapFromQuote} disabled={!quoteResult}>
               Crear Retazo desde Cotizacion
             </Button>
-            <Button variant="secondary" onClick={handleListScraps}>Refrescar</Button>
+            <Button variant="secondary" onClick={handleListScraps} disabled={loadingMenu}>
+              {loadingMenu ? <Spinner size="sm" /> : "Refrescar"}
+            </Button>
           </div>
-          {scraps.length > 0 ? (
+          {loadingMenu && scraps.length === 0 ? (
+            <TableSkeleton rows={4} cols={7} />
+          ) : scraps.length > 0 ? (
             <table className="data-table">
               <thead>
                 <tr><th>ID</th><th>Estado</th><th>Area m²</th><th>Medida</th><th>SKU</th><th>Ubicacion</th><th>Accion</th></tr>
@@ -922,7 +1063,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
             />
           </label>
           <div className="inline-actions">
-            <Button onClick={() => void handleBatchLabels()}>Emitir todas las etiquetas</Button>
+            <Button onClick={() => void handleBatchLabels()} disabled={loadingMenu}>
+              {loadingMenu ? <Spinner size="sm" /> : "Emitir todas las etiquetas"}
+            </Button>
           </div>
           {batchResults.length > 0 ? (
             <table className="data-table">
@@ -971,9 +1114,13 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
 
           <p className="flow-title" style={{ marginTop: "1.5rem" }}>Historial de etiquetas</p>
           <div className="inline-actions">
-            <Button variant="secondary" onClick={() => void handleListLabels()}>Refrescar</Button>
+            <Button variant="secondary" onClick={() => void handleListLabels()} disabled={loadingMenu}>
+              {loadingMenu ? <Spinner size="sm" /> : "Refrescar"}
+            </Button>
           </div>
-          {labelList.length > 0 ? (
+          {loadingMenu && labelList.length === 0 ? (
+            <TableSkeleton rows={4} cols={6} />
+          ) : labelList.length > 0 ? (
             <table className="data-table">
               <thead>
                 <tr><th>ID</th><th>Tipo</th><th>Linea/Retazo/Cotiz.</th><th>Creado</th><th>Ultimo print</th><th>Acciones</th></tr>
@@ -996,8 +1143,12 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                         >
                           Ver
                         </a>
-                        <Button variant="secondary" onClick={() => void handleReprintById(l.id)}>
-                          Reimprimir
+                        <Button
+                          variant="secondary"
+                          onClick={() => void handleReprintById(l.id)}
+                          disabled={loadingActionId === l.id}
+                        >
+                          {loadingActionId === l.id ? <Spinner size="sm" /> : "Reimprimir"}
                         </Button>
                       </div>
                     </td>
@@ -1016,7 +1167,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
           <p className="flow-title">Configuracion de Flujo</p>
           <p className="status-note">{settingsStatus}</p>
           <div className="inline-actions">
-            <Button variant="secondary" onClick={loadFlowRules}>Refrescar</Button>
+            <Button variant="secondary" onClick={loadFlowRules} disabled={loadingMenu}>
+              {loadingMenu ? <Spinner size="sm" /> : "Refrescar"}
+            </Button>
           </div>
           {flowRules ? (
             <>
@@ -1028,20 +1181,23 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                 <Button
                   variant={flowRules.scrapRequiredAtStage === "NONE" ? "primary" : "secondary"}
                   onClick={() => void handleUpdateFlowRules("NONE")}
+                  disabled={!!loadingActionId}
                 >
-                  NONE (sin enforcement)
+                  {loadingActionId === "NONE" ? <Spinner size="sm" /> : "NONE (sin enforcement)"}
                 </Button>
                 <Button
                   variant={flowRules.scrapRequiredAtStage === "AT_CUT" ? "primary" : "secondary"}
                   onClick={() => void handleUpdateFlowRules("AT_CUT")}
+                  disabled={!!loadingActionId}
                 >
-                  AT_CUT (requiere ubicacion al cortar)
+                  {loadingActionId === "AT_CUT" ? <Spinner size="sm" /> : "AT_CUT (requiere ubicacion al cortar)"}
                 </Button>
                 <Button
                   variant={flowRules.scrapRequiredAtStage === "AT_SALE_CLOSE" ? "primary" : "secondary"}
                   onClick={() => void handleUpdateFlowRules("AT_SALE_CLOSE")}
+                  disabled={!!loadingActionId}
                 >
-                  AT_SALE_CLOSE (requiere retazos resueltos al confirmar)
+                  {loadingActionId === "AT_SALE_CLOSE" ? <Spinner size="sm" /> : "AT_SALE_CLOSE (requiere retazos resueltos al confirmar)"}
                 </Button>
               </div>
               <p className="status-note" style={{ marginTop: "1rem", fontSize: "0.85em", opacity: 0.7 }}>
@@ -1057,8 +1213,14 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
       {activeMenu === "audit" ? (
         <article className="flow-card">
           <p className="flow-title">Auditoria</p>
-          <div className="inline-actions"><Button onClick={loadAudit}>Refrescar</Button></div>
-          {auditEvents.length > 0 ? (
+          <div className="inline-actions">
+            <Button onClick={loadAudit} disabled={loadingMenu}>
+              {loadingMenu ? <Spinner size="sm" /> : "Refrescar"}
+            </Button>
+          </div>
+          {loadingMenu && auditEvents.length === 0 ? (
+            <TableSkeleton rows={6} cols={4} />
+          ) : auditEvents.length > 0 ? (
             <table className="data-table">
               <thead><tr><th>Entidad</th><th>Accion</th><th>Actor</th><th>Fecha</th></tr></thead>
               <tbody>
@@ -1093,16 +1255,12 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
         {modalStatus ? <p className="status-note" style={{ color: "var(--danger)" }}>{modalStatus}</p> : null}
         <div className="inline-actions">
           <Button
-            onClick={() => {
-              if (activeModal?.type === "pre-cut-location") {
-                void doMarkCut(activeModal.cutJobId, modalLocationCode);
-              }
-            }}
-            disabled={!modalLocationCode}
+            onClick={() => void handleModalMarkCut()}
+            disabled={!modalLocationCode || loadingModal}
           >
-            Confirmar y marcar cortado
+            {loadingModal ? <Spinner size="sm" /> : "Confirmar y marcar cortado"}
           </Button>
-          <Button variant="secondary" onClick={() => setActiveModal(null)}>Cancelar</Button>
+          <Button variant="secondary" onClick={() => setActiveModal(null)} disabled={loadingModal}>Cancelar</Button>
         </div>
       </Dialog>
 
@@ -1126,16 +1284,12 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
         {modalStatus ? <p className="status-note" style={{ color: "var(--danger)" }}>{modalStatus}</p> : null}
         <div className="inline-actions">
           <Button
-            onClick={() => {
-              if (activeModal?.type === "post-cut-location") {
-                void doAssignLocation(activeModal.scrapId, modalLocationCode);
-              }
-            }}
-            disabled={!modalLocationCode}
+            onClick={() => void handleModalAssignLocation()}
+            disabled={!modalLocationCode || loadingModal}
           >
-            Asignar ubicacion
+            {loadingModal ? <Spinner size="sm" /> : "Asignar ubicacion"}
           </Button>
-          <Button variant="secondary" onClick={() => setActiveModal(null)}>Omitir por ahora</Button>
+          <Button variant="secondary" onClick={() => setActiveModal(null)} disabled={loadingModal}>Omitir por ahora</Button>
         </div>
       </Dialog>
 
@@ -1159,16 +1313,12 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
         {modalStatus ? <p className="status-note" style={{ color: "var(--danger)" }}>{modalStatus}</p> : null}
         <div className="inline-actions">
           <Button
-            onClick={() => {
-              if (activeModal?.type === "assign-scrap-location") {
-                void doAssignLocation(activeModal.scrapId, modalLocationCode);
-              }
-            }}
-            disabled={!modalLocationCode}
+            onClick={() => void handleModalAssignLocation()}
+            disabled={!modalLocationCode || loadingModal}
           >
-            Asignar ubicacion
+            {loadingModal ? <Spinner size="sm" /> : "Asignar ubicacion"}
           </Button>
-          <Button variant="secondary" onClick={() => setActiveModal(null)}>Cancelar</Button>
+          <Button variant="secondary" onClick={() => setActiveModal(null)} disabled={loadingModal}>Cancelar</Button>
         </div>
       </Dialog>
     </section>

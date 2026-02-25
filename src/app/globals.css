@@ -520,3 +520,37 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Spinner ──────────────────────────────────────────── */
+.t-spinner {
+  display: inline-block;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: t-spin 0.55s linear infinite;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.t-spinner-sm { width: 14px; height: 14px; }
+.t-spinner-md { width: 28px; height: 28px; }
+
+@keyframes t-spin { to { transform: rotate(360deg); } }
+
+.t-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ── Skeleton ─────────────────────────────────────────── */
+.skeleton-cell {
+  display: block;
+  height: 0.85rem;
+  background: var(--bg-c);
+  border-radius: 4px;
+  animation: t-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes t-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}

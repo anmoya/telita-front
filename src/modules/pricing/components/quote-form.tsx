@@ -544,7 +544,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     });
     const data = await response.json();
     setLabelId(data.labelId ?? "");
-    setLabelStatus(`Etiqueta quote creada: ${data.labelId ?? "error"}`);
+    setLabelStatus(`Etiqueta cotizacion creada: ${data.labelId ?? "error"}`);
   }
 
   async function handleCreateScrapLabel() {
@@ -582,7 +582,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
 
           {dashboardKpis ? (
             <div className="kpi-grid">
-              <article className="kpi-card"><span>Quotes Hoy</span><strong>{dashboardKpis.quotesCreatedToday}</strong></article>
+              <article className="kpi-card"><span>Cotizaciones Hoy</span><strong>{dashboardKpis.quotesCreatedToday}</strong></article>
               <article className="kpi-card"><span>Ventas Confirmadas</span><strong>{dashboardKpis.salesConfirmedToday}</strong></article>
               <article className="kpi-card"><span>Ventas Anuladas</span><strong>{dashboardKpis.salesCanceledToday}</strong></article>
               <article className="kpi-card"><span>Retazos Pendientes</span><strong>{dashboardKpis.pendingScraps}</strong></article>
@@ -659,7 +659,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
           <label className="field"><span>Cantidad</span><Input value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
           <p className="status-note">Metros lineales estimados: {linearMeters.toFixed(2)}</p>
           <p className="status-note">{status}</p>
-          <div className="inline-actions"><Button onClick={handleCalculate}>Calcular</Button><Button variant="secondary" onClick={handleListQuotes}>Listar Quotes</Button></div>
+          <div className="inline-actions"><Button onClick={handleCalculate}>Calcular</Button><Button variant="secondary" onClick={handleListQuotes}>Listar Cotizaciones</Button></div>
           {quoteResult ? <pre className="code-block">{JSON.stringify(quoteResult, null, 2)}</pre> : null}
           {quotes.length > 0 ? (
             <table className="data-table"><thead><tr><th>ID</th><th>Medida</th><th>Cant.</th><th>Total</th><th>Fecha</th></tr></thead><tbody>
@@ -853,7 +853,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
           <p className="status-note">{scrapStatus}</p>
           <div className="inline-actions">
             <Button variant="secondary" onClick={handleRegisterScrapFromQuote} disabled={!quoteResult}>
-              Crear Scrap desde Quote
+              Crear Retazo desde Cotizacion
             </Button>
             <Button variant="secondary" onClick={handleListScraps}>Refrescar</Button>
           </div>
@@ -951,10 +951,10 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
             </table>
           ) : null}
 
-          <p className="flow-title" style={{ marginTop: "1.5rem" }}>Etiqueta individual (quote/scrap)</p>
+          <p className="flow-title" style={{ marginTop: "1.5rem" }}>Etiqueta individual (cotizacion/retazo)</p>
           <p className="status-note">LabelId actual: {labelId || "-"}</p>
           <div className="inline-actions">
-            <Button variant="secondary" onClick={handleCreateQuoteLabel} disabled={!quoteResult}>Label Quote</Button>
+            <Button variant="secondary" onClick={handleCreateQuoteLabel} disabled={!quoteResult}>Etiqueta Cotizacion</Button>
             <Button variant="secondary" onClick={handleCreateScrapLabel} disabled={!scrapId}>Label Scrap</Button>
             <Button variant="secondary" onClick={handleReprint} disabled={!labelId}>Reprint</Button>
             {labelId ? (
@@ -976,7 +976,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
           {labelList.length > 0 ? (
             <table className="data-table">
               <thead>
-                <tr><th>ID</th><th>Tipo</th><th>Linea/Scrap/Quote</th><th>Creado</th><th>Ultimo print</th><th>Acciones</th></tr>
+                <tr><th>ID</th><th>Tipo</th><th>Linea/Retazo/Cotiz.</th><th>Creado</th><th>Ultimo print</th><th>Acciones</th></tr>
               </thead>
               <tbody>
                 {labelList.map((l) => (

@@ -1,0 +1,36 @@
+0 verbose cli /home/alfonso/.local/share/mise/installs/node/22.20.0/bin/node /home/alfonso/.local/share/mise/installs/node/22.20.0/lib/node_modules/npm/bin/npm-cli.js
+1 info using npm@10.9.3
+2 info using node@v22.20.0
+3 silly config load:file:/home/alfonso/.local/share/mise/installs/node/22.20.0/lib/node_modules/npm/npmrc
+4 silly config load:file:/home/alfonso/Dev/projects/telita/telita-front/.npmrc
+5 silly config load:file:/home/alfonso/.npmrc
+6 silly config load:file:/home/alfonso/.local/share/mise/installs/node/22.20.0/etc/npmrc
+7 verbose title npm install
+8 verbose argv "install"
+9 verbose logfile logs-max:10 dir:/home/alfonso/Dev/projects/telita/telita-front/.npm-cache/_logs/2026-02-24T12_56_18_479Z-
+10 verbose logfile /home/alfonso/Dev/projects/telita/telita-front/.npm-cache/_logs/2026-02-24T12_56_18_479Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+13 http fetch GET https://registry.npmjs.org/npm attempt 1 failed with EAI_AGAIN
+14 silly idealTree buildDeps
+15 silly fetch manifest next@15.3.2
+16 silly packumentCache full:https://registry.npmjs.org/next cache-miss
+17 http fetch GET https://registry.npmjs.org/next attempt 1 failed with EAI_AGAIN
+18 http fetch GET https://registry.npmjs.org/npm attempt 2 failed with EAI_AGAIN
+19 http fetch GET https://registry.npmjs.org/next attempt 2 failed with EAI_AGAIN
+20 http fetch GET https://registry.npmjs.org/npm attempt 3 failed with EAI_AGAIN
+21 http fetch GET https://registry.npmjs.org/next attempt 3 failed with EAI_AGAIN
+22 silly fetch manifest react@19.1.0
+23 silly packumentCache full:https://registry.npmjs.org/react cache-miss
+24 http fetch GET https://registry.npmjs.org/react attempt 1 failed with EAI_AGAIN
+25 http fetch GET https://registry.npmjs.org/react attempt 2 failed with EAI_AGAIN
+26 http fetch GET https://registry.npmjs.org/react attempt 3 failed with EAI_AGAIN
+27 silly fetch manifest react-dom@19.1.0
+28 silly packumentCache full:https://registry.npmjs.org/react-dom cache-miss
+29 http fetch GET https://registry.npmjs.org/react-dom attempt 1 failed with EAI_AGAIN
+30 http fetch GET https://registry.npmjs.org/react-dom attempt 2 failed with EAI_AGAIN
+31 http fetch GET https://registry.npmjs.org/react-dom attempt 3 failed with EAI_AGAIN
+32 silly fetch manifest @types/node@^22.13.5
+33 silly packumentCache full:https://registry.npmjs.org/@types%2fnode cache-miss
+34 http fetch GET https://registry.npmjs.org/@types%2fnode attempt 1 failed with EAI_AGAIN
+35 http fetch GET https://registry.npmjs.org/@types%2fnode attempt 2 failed with EAI_AGAIN

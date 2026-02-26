@@ -7,6 +7,7 @@ import { Dialog } from "../../../shared/ui/primitives/dialog";
 import { Spinner } from "../../../shared/ui/primitives/spinner";
 import { TableSkeleton } from "../../../shared/ui/primitives/table-skeleton";
 import { formatLocalDateTime } from "../../../shared/time/date-service";
+import { fetchStatusLabels, getStatusLabel, type StatusLabelsByEntity, type EntityType } from "../../../shared/api/status-labels";
 
 type MenuKey = "dashboard" | "pricing" | "sales" | "cuts" | "scraps" | "labels" | "audit" | "settings";
 
@@ -200,6 +201,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   const [pendingScraps, setPendingScraps] = useState<PendingScrapRow[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditRow[]>([]);
 
+  // Status labels for localized display
+  const [statusLabels, setStatusLabels] = useState<StatusLabelsByEntity>({ sale: [], cut_job: [], scrap: [] });
+
   // Loading states
   const [loadingMenu, setLoadingMenu] = useState(false);
   const [loadingActionId, setLoadingActionId] = useState<string | null>(null);
@@ -210,7 +214,13 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   // Load flow rules on mount so cuts section is ready
   useEffect(() => {
     void loadFlowRules();
+    void loadStatusLabels();
   }, []);
+
+  async function loadStatusLabels() {
+    const labels = await fetchStatusLabels(apiUrl);
+    setStatusLabels(labels);
+  }
 
   useEffect(() => {
     if (activeMenu === "dashboard") void loadDashboard();
@@ -854,7 +864,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                     <tr key={row.id} style={{ cursor: "pointer" }} onClick={() => setSaleId(row.id)}>
                       <td>{row.quoteCode ?? "—"}{row.id === saleId ? " ◀" : ""}</td>
                       <td>{row.customerName ?? "—"}</td>
-                      <td>{row.status}</td>
+                      <td>{getStatusLabel(statusLabels, "sale", row.status)}</td>
                       <td>{row.lines.length}</td>
                       <td>{row.totalAmount}</td>
                       <td>
@@ -1009,7 +1019,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                     <td>{row.skuCode}</td>
                     <td>{row.requestedWidthM} x {row.requestedHeightM}</td>
                     <td>{row.quantity}</td>
-                    <td>{row.status}</td>
+                    <td>{getStatusLabel(statusLabels, "cut_job", row.status)}</td>
                     <td>{row.cutAt ? formatLocalDateTime(row.cutAt) : "-"}</td>
                     <td>
                       {row.status === "PENDING" || row.status === "IN_PROGRESS" ? (
@@ -1057,7 +1067,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                 {scraps.map((row) => (
                   <tr key={row.id}>
                     <td>{row.id.slice(0, 8)}</td>
-                    <td>{row.status}</td>
+                    <td>{getStatusLabel(statusLabels, "scrap", row.status)}</td>
                     <td>{row.areaM2}</td>
                     <td>{row.widthM} x {row.heightM}</td>
                     <td>{row.skuCode}</td>

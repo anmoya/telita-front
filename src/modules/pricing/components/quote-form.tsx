@@ -55,6 +55,10 @@ type ScrapMatchRow = {
 type SaleRow = {
   id: string;
   status: string;
+  quoteCode: string | null;
+  quoteNumber: number | null;
+  customerName: string | null;
+  customerReference: string | null;
   subtotalAmount: number;
   taxAmount: number;
   totalAmount: number;
@@ -156,6 +160,8 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   const [cutsStatus, setCutsStatus] = useState<string>("");
 
   const [saleId, setSaleId] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [customerReference, setCustomerReference] = useState("");
   const [scrapId, setScrapId] = useState("");
   const [labelId, setLabelId] = useState("");
   const [cutFilterStatus, setCutFilterStatus] = useState<CutJobStatus | "ALL">("PENDING");
@@ -574,12 +580,36 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
       body: JSON.stringify({
         branchCode: "MAIN",
         priceListName: "LISTA_BASE",
-        customerName: "Cliente Demo"
+        customerName: customerName || "Cliente Demo",
+        customerReference: customerReference || null
       })
     });
     const data = await response.json();
     setSaleId(data.saleId ?? "");
-    setSalesStatus(`Venta draft creada: ${data.saleId ?? "error"}`);
+    setSalesStatus(`Venta draft creada: ${data.quoteCode ?? "error"}`);
+    setCustomerName("");
+    setCustomerReference("");
+    await handleListSales();
+  }
+
+  async function handleUpdateSaleCustomer() {
+    if (!saleId) return;
+    setSalesStatus("Actualizando cliente...");
+    const response = await authedFetch(`${apiUrl}/sales/${saleId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        customerName: customerName || null,
+        customerReference: customerReference || null
+      })
+    });
+    if (!response.ok) {
+      const body = (await response.json()) as { message?: string };
+      setSalesStatus(body.message ?? `Error HTTP ${response.status}`);
+      return;
+    }
+    setSalesStatus("Cliente actualizado.");
+    setCustomerName("");
+    setCustomerReference("");
     await handleListSales();
   }
 
@@ -785,25 +815,45 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
           <p className="flow-title">Ventas y Corte</p>
           <p className="status-note">{salesStatus}</p>
           <p className="status-note">SaleId activo: {saleId ? saleId.slice(0, 8) : "ninguno — click en una fila para seleccionar"}</p>
+          <div className="form-row" style={{ marginBottom: "0.5rem" }}>
+            <div className="form-field" style={{ flex: 1 }}>
+              <label style={{ fontSize: "0.85em" }}>Cliente</label>
+              <Input
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Nombre del cliente"
+              />
+            </div>
+            <div className="form-field" style={{ flex: 1 }}>
+              <label style={{ fontSize: "0.85em" }}>Referencia</label>
+              <Input
+                value={customerReference}
+                onChange={(e) => setCustomerReference(e.target.value)}
+                placeholder="Referencia (opcional)"
+              />
+            </div>
+          </div>
           <div className="inline-actions">
             <Button variant="secondary" onClick={handleCreateSaleDraft} disabled={loadingMenu}>Crear Draft</Button>
             <Button variant="secondary" onClick={handleAddSaleLine} disabled={!saleId || loadingMenu}>Agregar Linea</Button>
+            <Button variant="secondary" onClick={handleUpdateSaleCustomer} disabled={!saleId || loadingMenu}>Actualizar Cliente</Button>
             <Button variant="secondary" onClick={handleListSales} disabled={loadingMenu}>
               {loadingMenu ? <Spinner size="sm" /> : "Refrescar"}
             </Button>
           </div>
           {loadingMenu && sales.length === 0 ? (
-            <TableSkeleton rows={4} cols={5} />
+            <TableSkeleton rows={4} cols={6} />
           ) : sales.length > 0 ? (
             <>
               <table className="data-table">
                 <thead>
-                  <tr><th>ID</th><th>Estado</th><th>Lineas</th><th>Total</th><th>Acciones</th></tr>
+                  <tr><th>COT</th><th>Cliente</th><th>Estado</th><th>Lineas</th><th>Total</th><th>Acciones</th></tr>
                 </thead>
                 <tbody>
                   {sales.map((row) => (
                     <tr key={row.id} style={{ cursor: "pointer" }} onClick={() => setSaleId(row.id)}>
-                      <td>{row.id.slice(0, 8)}{row.id === saleId ? " ◀" : ""}</td>
+                      <td>{row.quoteCode ?? "—"}{row.id === saleId ? " ◀" : ""}</td>
+                      <td>{row.customerName ?? "—"}</td>
                       <td>{row.status}</td>
                       <td>{row.lines.length}</td>
                       <td>{row.totalAmount}</td>

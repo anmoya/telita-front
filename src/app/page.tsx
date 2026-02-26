@@ -4,15 +4,34 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "../shared/ui/primitives/button";
 import { LoginScreen } from "../modules/auth/components/login-screen";
 import { QuoteForm } from "../modules/pricing/components/quote-form";
+import { UsersForm } from "../modules/users/components/users-form";
+import { MyProfileForm } from "../modules/users/components/my-profile-form";
+import { CatalogForm } from "../modules/catalog/components/catalog-form";
+import { PriceListForm } from "../modules/pricing/components/price-list-form";
+import { StorageLocationsForm } from "../modules/storage-locations/components/storage-locations-form";
 
-type MenuKey = "dashboard" | "pricing" | "sales" | "cuts" | "scraps" | "labels" | "audit" | "settings";
+type MenuKey =
+  | "dashboard"
+  | "pricing"
+  | "sales"
+  | "cuts"
+  | "scraps"
+  | "labels"
+  | "audit"
+  | "settings"
+  | "usuarios"
+  | "catalogo"
+  | "perfil"
+  | "listas-precios"
+  | "ubicaciones";
 
 type TokenInfo = {
+  sub: string;
   email: string;
   role: "superadmin" | "admin" | "operador";
 };
 
-const MENU_ITEMS: Array<{ key: MenuKey; label: string }> = [
+const ALL_MENU_ITEMS: Array<{ key: MenuKey; label: string; roles?: Array<"superadmin" | "admin" | "operador"> }> = [
   { key: "dashboard", label: "Dashboard" },
   { key: "pricing", label: "Cotizacion" },
   { key: "sales", label: "Ventas" },
@@ -20,7 +39,12 @@ const MENU_ITEMS: Array<{ key: MenuKey; label: string }> = [
   { key: "scraps", label: "Retazos" },
   { key: "labels", label: "Etiquetas" },
   { key: "audit", label: "Auditoria" },
-  { key: "settings", label: "Configuracion" }
+  { key: "settings", label: "Configuracion" },
+  { key: "catalogo", label: "Catalogo", roles: ["superadmin", "admin"] },
+  { key: "listas-precios", label: "Listas Precios", roles: ["superadmin", "admin"] },
+  { key: "ubicaciones", label: "Ubicaciones", roles: ["superadmin", "admin"] },
+  { key: "usuarios", label: "Usuarios", roles: ["superadmin", "admin"] },
+  { key: "perfil", label: "Mi perfil" }
 ];
 
 export default function HomePage() {
@@ -36,6 +60,15 @@ export default function HomePage() {
   }, []);
 
   const tokenInfo = useMemo(() => (accessToken ? decodeToken(accessToken) : null), [accessToken]);
+
+  const menuItems = useMemo(
+    () =>
+      ALL_MENU_ITEMS.filter((item) => {
+        if (!item.roles) return true;
+        return tokenInfo ? item.roles.includes(tokenInfo.role) : false;
+      }),
+    [tokenInfo]
+  );
 
   function handleLogout() {
     window.localStorage.removeItem("telita_access_token");
@@ -61,7 +94,7 @@ export default function HomePage() {
         </div>
 
         <nav className="sidebar-nav">
-          {MENU_ITEMS.map((item) => (
+          {menuItems.map((item) => (
             <button
               key={item.key}
               className={`nav-item ${activeMenu === item.key ? "nav-item-active" : ""}`.trim()}
@@ -77,7 +110,7 @@ export default function HomePage() {
         <header className="topbar-2026">
           <div>
             <p className="topbar-kicker">App 2026</p>
-            <h2 className="topbar-title">{MENU_ITEMS.find((item) => item.key === activeMenu)?.label}</h2>
+            <h2 className="topbar-title">{ALL_MENU_ITEMS.find((item) => item.key === activeMenu)?.label}</h2>
           </div>
 
           <div className="topbar-user">
@@ -91,7 +124,45 @@ export default function HomePage() {
           </div>
         </header>
 
-        <QuoteForm accessToken={accessToken} activeMenu={activeMenu} onNavigate={setActiveMenu} />
+        {activeMenu === "catalogo" && tokenInfo && (
+          <CatalogForm
+            accessToken={accessToken}
+            apiUrl={apiUrl}
+            currentUserRole={tokenInfo.role}
+          />
+        )}
+        {activeMenu === "usuarios" && tokenInfo && (
+          <UsersForm
+            accessToken={accessToken}
+            apiUrl={apiUrl}
+            currentUserRole={tokenInfo.role}
+            currentUserId={tokenInfo.sub}
+          />
+        )}
+        {activeMenu === "perfil" && tokenInfo && (
+          <MyProfileForm
+            accessToken={accessToken}
+            apiUrl={apiUrl}
+            currentUserId={tokenInfo.sub}
+          />
+        )}
+        {activeMenu === "listas-precios" && tokenInfo && (
+          <PriceListForm
+            accessToken={accessToken}
+            apiUrl={apiUrl}
+            currentUserRole={tokenInfo.role}
+          />
+        )}
+        {activeMenu === "ubicaciones" && tokenInfo && (
+          <StorageLocationsForm
+            accessToken={accessToken}
+            apiUrl={apiUrl}
+            currentUserRole={tokenInfo.role}
+          />
+        )}
+        {activeMenu !== "catalogo" && activeMenu !== "usuarios" && activeMenu !== "perfil" && activeMenu !== "listas-precios" && activeMenu !== "ubicaciones" && (
+          <QuoteForm accessToken={accessToken} activeMenu={activeMenu} onNavigate={setActiveMenu} />
+        )}
       </section>
     </main>
   );
@@ -102,10 +173,12 @@ function decodeToken(token: string): TokenInfo | null {
     const parts = token.split(".");
     if (parts.length < 2) return null;
     const payload = JSON.parse(atob(parts[0].replace(/-/g, "+").replace(/_/g, "/"))) as {
+      sub: string;
       email: string;
       role: TokenInfo["role"];
     };
     return {
+      sub: payload.sub,
       email: payload.email,
       role: payload.role
     };

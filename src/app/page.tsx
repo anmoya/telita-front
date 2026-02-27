@@ -9,6 +9,7 @@ import { MyProfileForm } from "../modules/users/components/my-profile-form";
 import { CatalogForm } from "../modules/catalog/components/catalog-form";
 import { PriceListForm } from "../modules/pricing/components/price-list-form";
 import { StorageLocationsForm } from "../modules/storage-locations/components/storage-locations-form";
+import { QuoteItemCategoriesForm } from "../modules/quote-item-categories/components/quote-item-categories-form";
 
 type MenuKey =
   | "dashboard"
@@ -23,7 +24,8 @@ type MenuKey =
   | "catalogo"
   | "perfil"
   | "listas-precios"
-  | "ubicaciones";
+  | "ubicaciones"
+  | "categorias-cotizacion";
 
 type TokenInfo = {
   sub: string;
@@ -43,6 +45,7 @@ const ALL_MENU_ITEMS: Array<{ key: MenuKey; label: string; roles?: Array<"supera
   { key: "catalogo", label: "Catalogo", roles: ["superadmin", "admin"] },
   { key: "listas-precios", label: "Listas Precios", roles: ["superadmin", "admin"] },
   { key: "ubicaciones", label: "Ubicaciones", roles: ["superadmin", "admin"] },
+  { key: "categorias-cotizacion", label: "Cat. Cotizacion", roles: ["superadmin", "admin"] },
   { key: "usuarios", label: "Usuarios", roles: ["superadmin", "admin"] },
   { key: "perfil", label: "Mi perfil" }
 ];
@@ -160,7 +163,14 @@ export default function HomePage() {
             currentUserRole={tokenInfo.role}
           />
         )}
-        {activeMenu !== "catalogo" && activeMenu !== "usuarios" && activeMenu !== "perfil" && activeMenu !== "listas-precios" && activeMenu !== "ubicaciones" && (
+        {activeMenu === "categorias-cotizacion" && tokenInfo && (
+          <QuoteItemCategoriesForm
+            accessToken={accessToken}
+            apiUrl={apiUrl}
+            currentUserRole={tokenInfo.role}
+          />
+        )}
+        {activeMenu !== "catalogo" && activeMenu !== "usuarios" && activeMenu !== "perfil" && activeMenu !== "listas-precios" && activeMenu !== "ubicaciones" && activeMenu !== "categorias-cotizacion" && (
           <QuoteForm accessToken={accessToken} activeMenu={activeMenu} onNavigate={setActiveMenu} />
         )}
       </section>

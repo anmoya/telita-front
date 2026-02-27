@@ -26,10 +26,18 @@ type Branch = {
 
 type ActiveModal =
   | "create"
+  | "bulk-create"
   | { type: "edit"; location: StorageLocation }
   | { type: "delete"; location: StorageLocation }
   | { type: "toggle-status"; location: StorageLocation }
   | null;
+
+type BulkPreviewResult = {
+  totalToGenerate: number;
+  existingCount: number;
+  newCount: number;
+  sample: string[];
+};
 
 type StorageLocationsFormProps = {
   accessToken: string;
@@ -57,6 +65,18 @@ export function StorageLocationsForm({ accessToken, apiUrl, currentUserRole }: S
   // Edit form state
   const [editCode, setEditCode] = useState("");
   const [editDescription, setEditDescription] = useState("");
+
+  // Bulk create state
+  const [bulkRowMode, setBulkRowMode] = useState<"LETTER" | "FIXED">("LETTER");
+  const [bulkRowStart, setBulkRowStart] = useState("A");
+  const [bulkRowEnd, setBulkRowEnd] = useState("E");
+  const [bulkColStart, setBulkColStart] = useState("1");
+  const [bulkColEnd, setBulkColEnd] = useState("10");
+  const [bulkSeparator, setBulkSeparator] = useState("-");
+  const [bulkDescTemplate, setBulkDescTemplate] = useState("");
+  const [bulkStep, setBulkStep] = useState<"form" | "preview">("form");
+  const [bulkPreview, setBulkPreview] = useState<BulkPreviewResult | null>(null);
+  const [bulkResult, setBulkResult] = useState<{ created: number; skipped: number } | null>(null);
 
   const fetchBranches = async () => {
     try {
@@ -173,7 +193,7 @@ export function StorageLocationsForm({ accessToken, apiUrl, currentUserRole }: S
 
   const handleUpdate = async () => {
     const modal = activeModal;
-    if (!modal || modal === null || modal === "create" || modal.type === "delete" || modal.type === "toggle-status") {
+    if (!modal || modal === null || modal === "create" || modal === "bulk-create" || modal.type === "delete" || modal.type === "toggle-status") {
       return;
     }
     const location = modal.location;
@@ -217,7 +237,7 @@ export function StorageLocationsForm({ accessToken, apiUrl, currentUserRole }: S
 
   const handleDelete = async () => {
     const modal = activeModal;
-    if (!modal || modal === null || modal === "create" || modal.type === "edit" || modal.type === "toggle-status") {
+    if (!modal || modal === null || modal === "create" || modal === "bulk-create" || modal.type === "edit" || modal.type === "toggle-status") {
       return;
     }
     const location = modal.location;
@@ -249,7 +269,7 @@ export function StorageLocationsForm({ accessToken, apiUrl, currentUserRole }: S
 
   const handleToggleStatus = async () => {
     const modal = activeModal;
-    if (!modal || modal === null || modal === "create" || modal.type === "edit" || modal.type === "delete") {
+    if (!modal || modal === null || modal === "create" || modal === "bulk-create" || modal.type === "edit" || modal.type === "delete") {
       return;
     }
     const location = modal.location;
@@ -267,6 +287,103 @@ export function StorageLocationsForm({ accessToken, apiUrl, currentUserRole }: S
       } else {
         const data = await res.json();
         setErrorMsg(data.message || "Error al cambiar estado");
+      }
+    } catch {
+      setErrorMsg("Error de conexion");
+    } finally {
+      setLoadingModal(false);
+    }
+  };
+
+  const openBulkCreateModal = () => {
+    setBulkStep("form");
+    setBulkPreview(null);
+    setBulkResult(null);
+    setErrorMsg("");
+    setActiveModal("bulk-create");
+  };
+
+  const handleBulkPreview = async () => {
+    setErrorMsg("");
+    const colStart = parseInt(bulkColStart);
+    const colEnd = parseInt(bulkColEnd);
+    if (!bulkRowStart || !bulkRowEnd) {
+      setErrorMsg("Fila inicio y fin son requeridas");
+      return;
+    }
+    if (isNaN(colStart) || isNaN(colEnd) || colStart < 1 || colEnd < colStart) {
+      setErrorMsg("Columnas invalidas: inicio debe ser >= 1 y fin >= inicio");
+      return;
+    }
+
+    setLoadingModal(true);
+    try {
+      const res = await fetch(`${apiUrl}/storage-locations/bulk-preview`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          branchCode: selectedBranch,
+          rowMode: bulkRowMode,
+          rowStart: bulkRowStart.toUpperCase(),
+          rowEnd: bulkRowEnd.toUpperCase(),
+          colStart,
+          colEnd,
+          separator: bulkSeparator || "-",
+          descriptionTemplate: bulkDescTemplate || undefined,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setBulkPreview(data);
+        setBulkStep("preview");
+      } else {
+        const data = await res.json();
+        setErrorMsg(data.message || "Error al previsualizar");
+      }
+    } catch {
+      setErrorMsg("Error de conexion");
+    } finally {
+      setLoadingModal(false);
+    }
+  };
+
+  const handleBulkCreate = async () => {
+    setErrorMsg("");
+    const colStart = parseInt(bulkColStart);
+    const colEnd = parseInt(bulkColEnd);
+
+    setLoadingModal(true);
+    try {
+      const res = await fetch(`${apiUrl}/storage-locations/bulk-create`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          branchCode: selectedBranch,
+          rowMode: bulkRowMode,
+          rowStart: bulkRowStart.toUpperCase(),
+          rowEnd: bulkRowEnd.toUpperCase(),
+          colStart,
+          colEnd,
+          separator: bulkSeparator || "-",
+          descriptionTemplate: bulkDescTemplate || undefined,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setBulkResult({ created: data.created, skipped: data.skipped });
+        setActiveModal(null);
+        fetchLocations();
+      } else {
+        const data = await res.json();
+        setErrorMsg(data.message || "Error al crear ubicaciones");
       }
     } catch {
       setErrorMsg("Error de conexion");
@@ -299,11 +416,26 @@ export function StorageLocationsForm({ accessToken, apiUrl, currentUserRole }: S
         </div>
 
         {canManageLocations && (
-          <Button variant="primary" onClick={openCreateModal}>
-            + Nueva Ubicacion
-          </Button>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <Button variant="secondary" onClick={openBulkCreateModal}>
+              Generador Masivo
+            </Button>
+            <Button variant="primary" onClick={openCreateModal}>
+              + Nueva Ubicacion
+            </Button>
+          </div>
         )}
       </div>
+
+      {bulkResult && (
+        <div className="success-banner">
+          Generador masivo completado: <strong>{bulkResult.created}</strong> ubicaciones creadas
+          {bulkResult.skipped > 0 && <>, {bulkResult.skipped} ya existian (omitidas)</>}
+          <button className="error-close" onClick={() => setBulkResult(null)}>
+            x
+          </button>
+        </div>
+      )}
 
       {errorMsg && (
         <div className="error-banner">
@@ -513,6 +645,154 @@ export function StorageLocationsForm({ accessToken, apiUrl, currentUserRole }: S
                 disabled={loadingModal || activeModal.location.scrapCountStored > 0}
               >
                 {loadingModal ? <Spinner size="sm" /> : "Eliminar"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+
+      {/* Bulk Create Modal */}
+      <Dialog
+        open={activeModal === "bulk-create"}
+        onClose={closeModal}
+        title="Generador Masivo de Ubicaciones"
+      >
+        {bulkStep === "form" && (
+          <div className="form-grid">
+            <div className="form-field">
+              <label className="input-label">Modo de fila</label>
+              <select
+                className="t-input"
+                value={bulkRowMode}
+                onChange={(e) => setBulkRowMode(e.target.value as "LETTER" | "FIXED")}
+              >
+                <option value="LETTER">Letras (A-Z)</option>
+                <option value="FIXED">Texto fijo</option>
+              </select>
+            </div>
+
+            <div style={{ display: "flex", gap: "0.75rem" }}>
+              <div className="form-field" style={{ flex: 1 }}>
+                <label className="input-label">Fila inicio *</label>
+                <Input
+                  value={bulkRowStart}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setBulkRowStart(e.target.value.toUpperCase())
+                  }
+                  placeholder={bulkRowMode === "LETTER" ? "A" : "EST1"}
+                  maxLength={bulkRowMode === "LETTER" ? 1 : 10}
+                />
+              </div>
+              <div className="form-field" style={{ flex: 1 }}>
+                <label className="input-label">Fila fin *</label>
+                <Input
+                  value={bulkRowEnd}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setBulkRowEnd(e.target.value.toUpperCase())
+                  }
+                  placeholder={bulkRowMode === "LETTER" ? "E" : "EST5"}
+                  maxLength={bulkRowMode === "LETTER" ? 1 : 10}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "0.75rem" }}>
+              <div className="form-field" style={{ flex: 1 }}>
+                <label className="input-label">Columna inicio *</label>
+                <Input
+                  value={bulkColStart}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBulkColStart(e.target.value)}
+                  placeholder="1"
+                  type="number"
+                />
+              </div>
+              <div className="form-field" style={{ flex: 1 }}>
+                <label className="input-label">Columna fin *</label>
+                <Input
+                  value={bulkColEnd}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBulkColEnd(e.target.value)}
+                  placeholder="10"
+                  type="number"
+                />
+              </div>
+              <div className="form-field" style={{ flex: 0.5 }}>
+                <label className="input-label">Separador</label>
+                <Input
+                  value={bulkSeparator}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBulkSeparator(e.target.value)}
+                  placeholder="-"
+                  maxLength={3}
+                />
+              </div>
+            </div>
+
+            <div className="form-field">
+              <label className="input-label">Plantilla de descripcion</label>
+              <Input
+                value={bulkDescTemplate}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBulkDescTemplate(e.target.value)}
+                placeholder="ej: Estanteria {row} posicion {col}"
+                maxLength={160}
+              />
+              <span className="input-hint">Use {"{row}"} y {"{col}"} como variables</span>
+            </div>
+
+            <div className="form-field">
+              <span className="input-hint">
+                {bulkRowMode === "LETTER"
+                  ? "Max 26 filas (A-Z), max 500 columnas, max 2000 codigos totales"
+                  : "Max 500 columnas, max 2000 codigos totales"}
+              </span>
+            </div>
+
+            {errorMsg && <div className="form-error">{errorMsg}</div>}
+
+            <div className="form-actions">
+              <Button variant="secondary" onClick={closeModal} disabled={loadingModal}>
+                Cancelar
+              </Button>
+              <Button variant="primary" onClick={handleBulkPreview} disabled={loadingModal}>
+                {loadingModal ? <Spinner size="sm" /> : "Previsualizar"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {bulkStep === "preview" && bulkPreview && (
+          <div className="form-grid">
+            <div style={{ padding: "0.75rem", backgroundColor: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: "4px" }}>
+              <p><strong>Resumen:</strong></p>
+              <p>Total a generar: <strong>{bulkPreview.totalToGenerate}</strong></p>
+              <p>Ya existentes (se omitiran): <strong>{bulkPreview.existingCount}</strong></p>
+              <p>Nuevas a crear: <strong>{bulkPreview.newCount}</strong></p>
+            </div>
+
+            <div className="form-field">
+              <label className="input-label">Muestra de codigos nuevos:</label>
+              <div style={{ fontFamily: "monospace", fontSize: "0.875rem", padding: "0.5rem", backgroundColor: "#f8f8f8", border: "1px solid #ddd", borderRadius: "4px", maxHeight: "120px", overflowY: "auto" }}>
+                {bulkPreview.sample.join(", ")}
+                {bulkPreview.newCount > bulkPreview.sample.length && (
+                  <span style={{ color: "#666" }}> ... y {bulkPreview.newCount - bulkPreview.sample.length} mas</span>
+                )}
+              </div>
+            </div>
+
+            {bulkPreview.newCount === 0 && (
+              <div className="form-error">Todas las ubicaciones ya existen. Nada que crear.</div>
+            )}
+
+            {errorMsg && <div className="form-error">{errorMsg}</div>}
+
+            <div className="form-actions">
+              <Button variant="secondary" onClick={() => setBulkStep("form")} disabled={loadingModal}>
+                Volver
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleBulkCreate}
+                disabled={loadingModal || bulkPreview.newCount === 0}
+              >
+                {loadingModal ? <Spinner size="sm" /> : `Crear ${bulkPreview.newCount} ubicaciones`}
               </Button>
             </div>
           </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../shared/ui/primitives/button";
 import { Input } from "../../../shared/ui/primitives/input";
 import { Dialog } from "../../../shared/ui/primitives/dialog";
@@ -31,6 +31,14 @@ type PriceListItem = {
 type SkuOption = {
   code: string;
   name: string;
+};
+
+type PriceListCell = {
+  id: string;
+  skuCode: string;
+  maxWidthM: number;
+  maxHeightM: number;
+  unitPrice: number;
 };
 
 type PriceListFormProps = {
@@ -65,11 +73,25 @@ type UpdateItemBody = {
   discountPct: number;
 };
 
+type CreateCellBody = {
+  skuCode: string;
+  maxWidthM: number;
+  maxHeightM: number;
+  unitPrice: number;
+};
+
+type UpdateCellBody = {
+  maxWidthM?: number;
+  maxHeightM?: number;
+  unitPrice?: number;
+};
+
 export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceListFormProps) {
-  const [view, setView] = useState<"lists" | "items">("lists");
+  const [view, setView] = useState<"lists" | "items" | "cells">("lists");
   const [priceLists, setPriceLists] = useState<PriceList[]>([]);
   const [selectedList, setSelectedList] = useState<PriceList | null>(null);
   const [items, setItems] = useState<PriceListItem[]>([]);
+  const [cells, setCells] = useState<PriceListCell[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -78,6 +100,8 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
   const [showEditListDialog, setShowEditListDialog] = useState(false);
   const [showAddItemDialog, setShowAddItemDialog] = useState(false);
   const [showEditItemDialog, setShowEditItemDialog] = useState(false);
+  const [showCreateCellDialog, setShowCreateCellDialog] = useState(false);
+  const [showEditCellDialog, setShowEditCellDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
   // Form states
@@ -94,10 +118,26 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
     discountPct: 0
   });
   const [editingItem, setEditingItem] = useState<PriceListItem | null>(null);
+  const [cellForm, setCellForm] = useState<CreateCellBody>({
+    skuCode: "",
+    maxWidthM: 0,
+    maxHeightM: 0,
+    unitPrice: 0
+  });
+  const [editingCell, setEditingCell] = useState<PriceListCell | null>(null);
   const [skuOptions, setSkuOptions] = useState<SkuOption[]>([]);
   const [loadingSkus, setLoadingSkus] = useState(false);
 
+  // SPEC-30: Error handling in modal
+  const [addItemError, setAddItemError] = useState("");
+
   const isAdmin = currentUserRole === "superadmin" || currentUserRole === "admin";
+
+  // SPEC-30: Filter SKUs to exclude those already in current list
+  const availableSkuOptions = useMemo(() => {
+    const currentSkuCodes = items.map((item) => item.skuCode);
+    return skuOptions.filter((sku) => !currentSkuCodes.includes(sku.code));
+  }, [skuOptions, items]);
 
   // Load price lists on mount
   useEffect(() => {
@@ -106,10 +146,17 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
 
   // Load items when selected list changes
   useEffect(() => {
-    if (selectedList) {
+    if (selectedList && view === "items") {
       loadItems(selectedList.id);
     }
-  }, [selectedList, accessToken]);
+  }, [selectedList, view, accessToken]);
+
+  // Load cells when selected list changes
+  useEffect(() => {
+    if (selectedList && view === "cells") {
+      loadCells(selectedList.id);
+    }
+  }, [selectedList, view, accessToken]);
 
   async function loadPriceLists() {
     setLoading(true);
@@ -138,6 +185,23 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
       if (!res.ok) throw new Error("Error al cargar ítems");
       const data = await res.json();
       setItems(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error desconocido");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadCells(priceListId: string) {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${apiUrl}/price-lists/${priceListId}/cells`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!res.ok) throw new Error("Error al cargar celdas");
+      const data = await res.json();
+      setCells(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error desconocido");
     } finally {
@@ -252,6 +316,7 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
 
   async function handleAddItem() {
     if (!selectedList) return;
+    setAddItemError("");
     try {
       const res = await fetch(`${apiUrl}/price-lists/${selectedList.id}/items`, {
         method: "POST",
@@ -263,10 +328,16 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
       });
       if (!res.ok) {
         const err = await res.json();
+        // SPEC-30: Handle 409 Conflict gracefully in modal
+        if (res.status === 409) {
+          setAddItemError(err.message || "Este SKU ya existe en la lista");
+          return;
+        }
         throw new Error(err.message || "Error al agregar ítem");
       }
       setShowAddItemDialog(false);
       setItemForm({ skuCode: "", basePrice: 0, discountPct: 0 });
+      setAddItemError("");
       loadItems(selectedList.id);
       loadPriceLists();
     } catch (e) {
@@ -320,6 +391,75 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
     }
   }
 
+  async function handleCreateCell() {
+    if (!selectedList) return;
+    try {
+      const res = await fetch(`${apiUrl}/price-lists/${selectedList.id}/cells`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(cellForm)
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Error al crear celda");
+      }
+      setShowCreateCellDialog(false);
+      setCellForm({ skuCode: "", maxWidthM: 0, maxHeightM: 0, unitPrice: 0 });
+      loadCells(selectedList.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error desconocido");
+    }
+  }
+
+  async function handleUpdateCell() {
+    if (!selectedList || !editingCell) return;
+    try {
+      const body: UpdateCellBody = {
+        maxWidthM: cellForm.maxWidthM,
+        maxHeightM: cellForm.maxHeightM,
+        unitPrice: cellForm.unitPrice
+      };
+      const res = await fetch(`${apiUrl}/price-lists/${selectedList.id}/cells/${editingCell.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Error al actualizar celda");
+      }
+      setShowEditCellDialog(false);
+      setEditingCell(null);
+      setCellForm({ skuCode: "", maxWidthM: 0, maxHeightM: 0, unitPrice: 0 });
+      loadCells(selectedList.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error desconocido");
+    }
+  }
+
+  async function handleDeleteCell(cellId: string) {
+    if (!selectedList) return;
+    try {
+      const res = await fetch(`${apiUrl}/price-lists/${selectedList.id}/cells/${cellId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Error al eliminar celda");
+      }
+      loadCells(selectedList.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error desconocido");
+    }
+  }
+
   function openEditListDialog(list: PriceList) {
     setListForm({
       branchCode: "MAIN",
@@ -346,6 +486,23 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
     setItemForm({ skuCode: "", basePrice: 0, discountPct: 0 });
     loadSkuOptions();
     setShowAddItemDialog(true);
+  }
+
+  function openCreateCellDialog() {
+    setCellForm({ skuCode: "", maxWidthM: 0, maxHeightM: 0, unitPrice: 0 });
+    loadSkuOptions();
+    setShowCreateCellDialog(true);
+  }
+
+  function openEditCellDialog(cell: PriceListCell) {
+    setEditingCell(cell);
+    setCellForm({
+      skuCode: cell.skuCode,
+      maxWidthM: cell.maxWidthM,
+      maxHeightM: cell.maxHeightM,
+      unitPrice: cell.unitPrice
+    });
+    setShowEditCellDialog(true);
   }
 
   function formatCurrency(value: number): string {
@@ -375,13 +532,21 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
       )}
 
       {/* Breadcrumb */}
-      {view === "items" && (
+      {(view === "items" || view === "cells") && (
         <div className="breadcrumb">
           <button onClick={() => setView("lists")} className="breadcrumb-link">
             Listas de precios
           </button>
           <span className="breadcrumb-sep">›</span>
-          <span className="breadcrumb-current">{selectedList?.name}</span>
+          <button onClick={() => setView("items")} className="breadcrumb-link">
+            {selectedList?.name}
+          </button>
+          {view === "cells" && (
+            <>
+              <span className="breadcrumb-sep">›</span>
+              <span className="breadcrumb-current">Tabla de precios</span>
+            </>
+          )}
         </div>
       )}
 
@@ -457,7 +622,14 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
       {view === "items" && selectedList && (
         <>
           <div className="section-header">
-            <h3>Ítems de: {selectedList.name}</h3>
+            <div>
+              <h3>Ítems de: {selectedList.name}</h3>
+              {isAdmin && (
+                <Button variant="secondary" onClick={() => setView("cells")} style={{ marginTop: "0.5rem" }}>
+                  Ver tabla de precios
+                </Button>
+              )}
+            </div>
             {isAdmin && (
               <Button variant="primary" onClick={openAddItemDialog}>
                 + Agregar SKU
@@ -501,6 +673,61 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
                   <tr>
                     <td colSpan={isAdmin ? 6 : 5} className="empty-row">
                       No hay ítems en esta lista. Agrega SKUs.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* Cells View (SPEC-31) */}
+      {view === "cells" && selectedList && (
+        <>
+          <div className="section-header">
+            <h3>Tabla de precios: {selectedList.name}</h3>
+            {isAdmin && (
+              <Button variant="primary" onClick={openCreateCellDialog}>
+                + Nueva celda
+              </Button>
+            )}
+          </div>
+
+          <div className="table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>SKU</th>
+                  <th>Ancho máx (m)</th>
+                  <th>Alto máx (m)</th>
+                  <th>Precio unitario</th>
+                  {isAdmin && <th>Acciones</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {cells.map((cell) => (
+                  <tr key={cell.id}>
+                    <td>{cell.skuCode}</td>
+                    <td>{cell.maxWidthM.toFixed(3)}</td>
+                    <td>{cell.maxHeightM.toFixed(3)}</td>
+                    <td>{formatCurrency(cell.unitPrice)}</td>
+                    {isAdmin && (
+                      <td className="actions-cell">
+                        <Button variant="secondary" onClick={() => openEditCellDialog(cell)}>
+                          Editar
+                        </Button>
+                        <Button variant="secondary" onClick={() => handleDeleteCell(cell.id)}>
+                          Eliminar
+                        </Button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+                {cells.length === 0 && (
+                  <tr>
+                    <td colSpan={isAdmin ? 5 : 4} className="empty-row">
+                      No hay celdas en esta tabla. Agrega una nueva.
                     </td>
                   </tr>
                 )}
@@ -610,58 +837,75 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
       {/* Add Item Dialog */}
       <Dialog open={showAddItemDialog} onClose={() => setShowAddItemDialog(false)} title="Agregar SKU a la lista">
         <div className="dialog-form">
-          <div className="form-field">
-            <label>SKU</label>
-            {loadingSkus ? (
-              <Spinner />
-            ) : (
-              <select
-                className="t-input"
-                value={itemForm.skuCode}
-                onChange={(e) => setItemForm({ ...itemForm, skuCode: e.target.value })}
-              >
-                <option value="">Seleccionar SKU...</option>
-                {skuOptions.map((sku) => (
-                  <option key={sku.code} value={sku.code}>
-                    {sku.code} - {sku.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div className="form-field">
-            <label>Precio base</label>
-            <Input
-              type="number"
-              value={itemForm.basePrice}
-              onChange={(e) => setItemForm({ ...itemForm, basePrice: Number(e.target.value) })}
-              min={0}
-            />
-          </div>
-          <div className="form-field">
-            <label>Descuento %</label>
-            <Input
-              type="number"
-              value={itemForm.discountPct}
-              onChange={(e) => setItemForm({ ...itemForm, discountPct: Number(e.target.value) })}
-              min={0}
-              max={100}
-            />
-          </div>
-          <div className="price-preview">
-            <span>Precio final: </span>
-            <strong>
-              {formatCurrency(itemForm.basePrice * (1 - itemForm.discountPct / 100))}
-            </strong>
-          </div>
+          {/* SPEC-30: Show error inline in modal */}
+          {addItemError && (
+            <div style={{ padding: "0.75rem", marginBottom: "1rem", backgroundColor: "#fee", border: "1px solid #f99", borderRadius: "4px", color: "#c00", fontSize: "0.9em" }}>
+              {addItemError}
+            </div>
+          )}
+
+          {/* SPEC-30: Filter available SKUs (exclude already added) */}
+          {availableSkuOptions.length === 0 ? (
+            <div style={{ padding: "1rem", textAlign: "center", color: "var(--muted)" }}>
+              <p>Todos los SKUs activos ya están agregados a esta lista.</p>
+            </div>
+          ) : (
+            <>
+              <div className="form-field">
+                <label>SKU</label>
+                {loadingSkus ? (
+                  <Spinner />
+                ) : (
+                  <select
+                    className="t-input"
+                    value={itemForm.skuCode}
+                    onChange={(e) => setItemForm({ ...itemForm, skuCode: e.target.value })}
+                  >
+                    <option value="">Seleccionar SKU...</option>
+                    {availableSkuOptions.map((sku) => (
+                      <option key={sku.code} value={sku.code}>
+                        {sku.code} - {sku.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <div className="form-field">
+                <label>Precio base</label>
+                <Input
+                  type="number"
+                  value={itemForm.basePrice}
+                  onChange={(e) => setItemForm({ ...itemForm, basePrice: Number(e.target.value) })}
+                  min={0}
+                />
+              </div>
+              <div className="form-field">
+                <label>Descuento %</label>
+                <Input
+                  type="number"
+                  value={itemForm.discountPct}
+                  onChange={(e) => setItemForm({ ...itemForm, discountPct: Number(e.target.value) })}
+                  min={0}
+                  max={100}
+                />
+              </div>
+              <div className="price-preview">
+                <span>Precio final: </span>
+                <strong>
+                  {formatCurrency(itemForm.basePrice * (1 - itemForm.discountPct / 100))}
+                </strong>
+              </div>
+            </>
+          )}
+
           <div className="dialog-actions">
-            <Button variant="secondary" onClick={() => setShowAddItemDialog(false)}>
+            <Button variant="secondary" onClick={() => { setShowAddItemDialog(false); setAddItemError(""); }}>
               Cancelar
             </Button>
             <Button
               variant="primary"
               onClick={handleAddItem}
-              disabled={!itemForm.skuCode || itemForm.basePrice <= 0}
+              disabled={availableSkuOptions.length === 0 || !itemForm.skuCode || itemForm.basePrice <= 0}
             >
               Agregar
             </Button>
@@ -725,6 +969,123 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
               onClick={() => showDeleteConfirm && handleDeleteList(showDeleteConfirm)}
             >
               Eliminar
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Create Cell Dialog (SPEC-31) */}
+      <Dialog open={showCreateCellDialog} onClose={() => setShowCreateCellDialog(false)} title="Nueva celda de precio">
+        <div className="dialog-form">
+          <div className="form-field">
+            <label>SKU</label>
+            {loadingSkus ? (
+              <Spinner />
+            ) : (
+              <select
+                className="t-input"
+                value={cellForm.skuCode}
+                onChange={(e) => setCellForm({ ...cellForm, skuCode: e.target.value })}
+              >
+                <option value="">Seleccionar SKU...</option>
+                {skuOptions.map((sku) => (
+                  <option key={sku.code} value={sku.code}>
+                    {sku.code} - {sku.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div className="form-field">
+            <label>Ancho máx (m)</label>
+            <Input
+              type="number"
+              value={cellForm.maxWidthM}
+              onChange={(e) => setCellForm({ ...cellForm, maxWidthM: Number(e.target.value) })}
+              step="0.001"
+              min={0}
+            />
+          </div>
+          <div className="form-field">
+            <label>Alto máx (m)</label>
+            <Input
+              type="number"
+              value={cellForm.maxHeightM}
+              onChange={(e) => setCellForm({ ...cellForm, maxHeightM: Number(e.target.value) })}
+              step="0.001"
+              min={0}
+            />
+          </div>
+          <div className="form-field">
+            <label>Precio unitario</label>
+            <Input
+              type="number"
+              value={cellForm.unitPrice}
+              onChange={(e) => setCellForm({ ...cellForm, unitPrice: Number(e.target.value) })}
+              min={0}
+            />
+          </div>
+          <div className="dialog-actions">
+            <Button variant="secondary" onClick={() => setShowCreateCellDialog(false)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleCreateCell}
+              disabled={!cellForm.skuCode || cellForm.maxWidthM <= 0 || cellForm.maxHeightM <= 0 || cellForm.unitPrice <= 0}
+            >
+              Crear
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Edit Cell Dialog (SPEC-31) */}
+      <Dialog open={showEditCellDialog} onClose={() => setShowEditCellDialog(false)} title="Editar celda de precio">
+        <div className="dialog-form">
+          <div className="form-field">
+            <label>SKU</label>
+            <Input value={cellForm.skuCode} disabled />
+          </div>
+          <div className="form-field">
+            <label>Ancho máx (m)</label>
+            <Input
+              type="number"
+              value={cellForm.maxWidthM}
+              onChange={(e) => setCellForm({ ...cellForm, maxWidthM: Number(e.target.value) })}
+              step="0.001"
+              min={0}
+            />
+          </div>
+          <div className="form-field">
+            <label>Alto máx (m)</label>
+            <Input
+              type="number"
+              value={cellForm.maxHeightM}
+              onChange={(e) => setCellForm({ ...cellForm, maxHeightM: Number(e.target.value) })}
+              step="0.001"
+              min={0}
+            />
+          </div>
+          <div className="form-field">
+            <label>Precio unitario</label>
+            <Input
+              type="number"
+              value={cellForm.unitPrice}
+              onChange={(e) => setCellForm({ ...cellForm, unitPrice: Number(e.target.value) })}
+              min={0}
+            />
+          </div>
+          <div className="dialog-actions">
+            <Button variant="secondary" onClick={() => setShowEditCellDialog(false)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleUpdateCell}
+              disabled={cellForm.maxWidthM <= 0 || cellForm.maxHeightM <= 0 || cellForm.unitPrice <= 0}
+            >
+              Guardar
             </Button>
           </div>
         </div>

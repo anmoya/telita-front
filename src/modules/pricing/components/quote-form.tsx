@@ -19,6 +19,27 @@ type ActiveModal =
   | { type: "assign-scrap-location"; scrapId: string }
   | null;
 
+type QuoteItem = {
+  id: string;
+  widthM: string;
+  heightM: string;
+  quantity: string;
+  description?: string;
+  unitPrice?: number;
+  subtotal?: number;
+  priceMethod?: string;
+  // SPEC-33: category + metadata
+  categoryId?: string;
+  categoryName?: string;
+  lineNote?: string;
+};
+
+type QuoteItemCategory = {
+  id: string;
+  name: string;
+  isActive: boolean;
+};
+
 type QuoteRow = {
   id: string;
   currencyCode: string;
@@ -41,6 +62,10 @@ type SaleLineRow = {
   unitPrice: number;
   lineTotal: number;
   allocatedScrapId: string | null;
+  categoryId: string | null;
+  categoryName: string | null;
+  displayOrder: number;
+  lineNote: string | null;
 };
 
 type ScrapMatchRow = {
@@ -154,6 +179,25 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   const [widthM, setWidthM] = useState("2.0");
   const [quantity, setQuantity] = useState("1");
 
+  // SPEC-32: Selectores dinámicos
+  const [selectedSkuCode, setSelectedSkuCode] = useState("");
+  const [selectedPriceListName, setSelectedPriceListName] = useState("");
+  const [skuOptions, setSkuOptions] = useState<Array<{ code: string; name: string }>>([]);
+  const [priceListOptions, setPriceListOptions] = useState<Array<{ name: string; isActive: boolean }>>([]);
+  const [loadingSelectors, setLoadingSelectors] = useState(false);
+
+  // SPEC-32: Multi-item
+  const [quoteItems, setQuoteItems] = useState<QuoteItem[]>([
+    { id: crypto.randomUUID(), widthM: "2.0", heightM: "2.0", quantity: "1", description: "" }
+  ]);
+
+  // SPEC-33: Categories
+  const [categories, setCategories] = useState<QuoteItemCategory[]>([]);
+  const [newCategoryName, setNewCategoryName] = useState("");
+
+  // SPEC-32: Operator margin (no persistido en BD)
+  const [operatorMargin, setOperatorMargin] = useState(0);
+
   const [status, setStatus] = useState<string>("");
   const [salesStatus, setSalesStatus] = useState<string>("");
   const [scrapStatus, setScrapStatus] = useState<string>("");
@@ -215,7 +259,145 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   useEffect(() => {
     void loadFlowRules();
     void loadStatusLabels();
+    void loadSelectorsData();
+    void loadCategories();
   }, []);
+
+  // SPEC-32: Multi-item helpers
+  function addQuoteItem() {
+    setQuoteItems([
+      ...quoteItems,
+      { id: crypto.randomUUID(), widthM: "", heightM: "", quantity: "1", description: "" }
+    ]);
+  }
+
+  function removeQuoteItem(id: string) {
+    if (quoteItems.length === 1) {
+      setStatus("Debe haber al menos un ítem");
+      return;
+    }
+    setQuoteItems(quoteItems.filter((item) => item.id !== id));
+  }
+
+  function updateQuoteItem(id: string, updates: Partial<QuoteItem>) {
+    setQuoteItems(
+      quoteItems.map((item) => (item.id === id ? { ...item, ...updates } : item))
+    );
+  }
+
+  // SPEC-33: Move item up/down
+  function moveItemUp(id: string) {
+    const idx = quoteItems.findIndex((it) => it.id === id);
+    if (idx <= 0) return;
+    const next = [...quoteItems];
+    [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+    setQuoteItems(next);
+  }
+
+  function moveItemDown(id: string) {
+    const idx = quoteItems.findIndex((it) => it.id === id);
+    if (idx < 0 || idx >= quoteItems.length - 1) return;
+    const next = [...quoteItems];
+    [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+    setQuoteItems(next);
+  }
+
+  // SPEC-33: Load categories
+  async function loadCategories() {
+    try {
+      const res = await authedFetch(`${apiUrl}/quote-item-categories?branchCode=MAIN&isActive=true`);
+      if (res.ok) {
+        const data = await res.json();
+        setCategories(Array.isArray(data) ? data : []);
+      }
+    } catch {
+      // non-blocking
+    }
+  }
+
+  // SPEC-33: Create category inline and assign to item
+  async function handleCreateCategoryForItem(itemId: string, name: string) {
+    if (!name.trim()) return;
+    try {
+      const res = await authedFetch(`${apiUrl}/quote-item-categories`, {
+        method: "POST",
+        body: JSON.stringify({ branchCode: "MAIN", name: name.trim() })
+      });
+      if (res.ok) {
+        const cat: QuoteItemCategory = await res.json();
+        setCategories((prev) => [...prev.filter((c) => c.id !== cat.id), cat]);
+        updateQuoteItem(itemId, { categoryId: cat.id, categoryName: cat.name });
+        setNewCategoryName("");
+      }
+    } catch {
+      // non-blocking
+    }
+  }
+
+  async function handleCalculateItem(itemId: string) {
+    if (!selectedSkuCode || !selectedPriceListName) {
+      setStatus("Selecciona SKU y lista de precios");
+      return;
+    }
+    const item = quoteItems.find((it) => it.id === itemId);
+    if (!item) return;
+
+    setLoadingActionId(itemId);
+    try {
+      const response = await authedFetch(`${apiUrl}/pricing/quote`, {
+        method: "POST",
+        body: JSON.stringify({
+          branchCode: "MAIN",
+          skuCode: selectedSkuCode,
+          priceListName: selectedPriceListName,
+          requestedWidthM: Number(item.widthM),
+          requestedHeightM: Number(item.heightM),
+          quantity: Number(item.quantity)
+        })
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      updateQuoteItem(itemId, {
+        unitPrice: data.unitPrice,
+        subtotal: data.subtotal,
+        priceMethod: data.priceMethod
+      });
+    } catch (error) {
+      setStatus(`Error al calcular: ${String(error)}`);
+    } finally {
+      setLoadingActionId(null);
+    }
+  }
+
+  // SPEC-32: Load SKU and price list options
+  async function loadSelectorsData() {
+    setLoadingSelectors(true);
+    try {
+      const [skuRes, plRes] = await Promise.all([
+        authedFetch(`${apiUrl}/catalog/all-skus?branchCode=MAIN`),
+        authedFetch(`${apiUrl}/price-lists?branchCode=MAIN`)
+      ]);
+      if (skuRes.ok) {
+        const skus = await skuRes.json();
+        setSkuOptions(skus || []);
+        if (skus?.length > 0 && !selectedSkuCode) {
+          setSelectedSkuCode(skus[0].code);
+        }
+      }
+      if (plRes.ok) {
+        const pls = await plRes.json();
+        const activeLists = pls?.filter((pl: { isActive: boolean }) => pl.isActive) || [];
+        setPriceListOptions(activeLists);
+        if (activeLists?.length > 0 && !selectedPriceListName) {
+          setSelectedPriceListName(activeLists[0].name);
+        }
+      }
+    } catch (err) {
+      console.error("Error loading selectors:", err);
+    } finally {
+      setLoadingSelectors(false);
+    }
+  }
 
   async function loadStatusLabels() {
     const labels = await fetchStatusLabels(apiUrl);
@@ -551,6 +733,10 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   }
 
   async function handleCalculate() {
+    if (!selectedSkuCode || !selectedPriceListName) {
+      setStatus("Selecciona SKU y lista de precios");
+      return;
+    }
     setStatus("");
     setQuoteResult(null);
     setLoadingActionId("calculate");
@@ -559,8 +745,8 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
         method: "POST",
         body: JSON.stringify({
           branchCode: "MAIN",
-          skuCode: "BLACKOUT_3X5",
-          priceListName: "LISTA_BASE",
+          skuCode: selectedSkuCode,
+          priceListName: selectedPriceListName,
           requestedWidthM: Number(widthM),
           requestedHeightM: Number(heightM),
           quantity: Number(quantity)
@@ -584,13 +770,21 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   }
 
   async function handleCreateSaleDraft() {
+    if (!selectedPriceListName) {
+      setSalesStatus("Selecciona una lista de precios");
+      return;
+    }
+    if (!customerName.trim()) {
+      setSalesStatus("Ingresa el nombre del cliente");
+      return;
+    }
     setSalesStatus("Creando venta...");
     const response = await authedFetch(`${apiUrl}/sales`, {
       method: "POST",
       body: JSON.stringify({
         branchCode: "MAIN",
-        priceListName: "LISTA_BASE",
-        customerName: customerName || "Cliente Demo",
+        priceListName: selectedPriceListName,
+        customerName: customerName,
         customerReference: customerReference || null
       })
     });
@@ -624,17 +818,28 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   }
 
   async function handleAddSaleLine() {
-    if (!saleId) return;
-    await authedFetch(`${apiUrl}/sales/${saleId}/lines`, {
-      method: "POST",
-      body: JSON.stringify({
-        skuCode: "BLACKOUT_3X5",
-        requestedWidthM: Number(widthM),
-        requestedHeightM: Number(heightM),
-        quantity: Number(quantity)
-      })
-    });
-    setSalesStatus("Linea agregada.");
+    if (!saleId || !selectedSkuCode) {
+      setSalesStatus("Selecciona SKU y venta");
+      return;
+    }
+    // SPEC-33: send items with category + displayOrder
+    for (let i = 0; i < quoteItems.length; i++) {
+      const item = quoteItems[i];
+      await authedFetch(`${apiUrl}/sales/${saleId}/lines`, {
+        method: "POST",
+        body: JSON.stringify({
+          skuCode: selectedSkuCode,
+          requestedWidthM: Number(item.widthM || widthM),
+          requestedHeightM: Number(item.heightM || heightM),
+          quantity: Number(item.quantity || quantity),
+          categoryId: item.categoryId ?? undefined,
+          categoryName: !item.categoryId && item.categoryName ? item.categoryName : undefined,
+          displayOrder: i,
+          lineNote: item.lineNote ?? undefined
+        })
+      });
+    }
+    setSalesStatus("Lineas agregadas.");
     await handleListSales();
   }
 
@@ -796,20 +1001,252 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
       {activeMenu === "pricing" ? (
         <article className="flow-card">
           <p className="flow-title">Cotizacion</p>
-          <label className="field"><span>Ancho (m)</span><Input value={widthM} onChange={(event) => setWidthM(event.target.value)} /></label>
-          <label className="field"><span>Alto (m)</span><Input value={heightM} onChange={(event) => setHeightM(event.target.value)} /></label>
-          <label className="field"><span>Cantidad</span><Input value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
-          <p className="status-note">Metros lineales estimados: {linearMeters.toFixed(2)}</p>
-          <p className="status-note">{status}</p>
-          <div className="inline-actions">
-            <Button onClick={handleCalculate} disabled={loadingActionId === "calculate"}>
-              {loadingActionId === "calculate" ? <Spinner size="sm" /> : "Calcular"}
-            </Button>
-            <Button variant="secondary" onClick={handleListQuotes} disabled={loadingMenu}>
-              {loadingMenu ? <Spinner size="sm" /> : "Listar Cotizaciones"}
-            </Button>
+          {/* SPEC-32: Dynamic selectors */}
+          {loadingSelectors ? (
+            <div><Spinner /> Cargando opciones...</div>
+          ) : (
+            <>
+              <label className="field">
+                <span>SKU</span>
+                <select
+                  className="t-input"
+                  value={selectedSkuCode}
+                  onChange={(e) => setSelectedSkuCode(e.target.value)}
+                >
+                  <option value="">-- Selecciona SKU --</option>
+                  {skuOptions.map((sku) => (
+                    <option key={sku.code} value={sku.code}>
+                      {sku.code} - {sku.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Lista de precios</span>
+                <select
+                  className="t-input"
+                  value={selectedPriceListName}
+                  onChange={(e) => setSelectedPriceListName(e.target.value)}
+                >
+                  <option value="">-- Selecciona lista --</option>
+                  {priceListOptions.map((pl) => (
+                    <option key={pl.name} value={pl.name}>
+                      {pl.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
+
+          {/* SPEC-32: Multi-item table */}
+          <div style={{ marginTop: "1rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+              <p style={{ margin: 0, fontWeight: 600 }}>Ítems de cotización</p>
+              <Button variant="secondary" onClick={addQuoteItem}>
+                + Agregar ítem
+              </Button>
+            </div>
+            <div className="table-wrapper">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Orden</th>
+                    <th>Ancho (m)</th>
+                    <th>Alto (m)</th>
+                    <th>Cantidad</th>
+                    <th>Categoria</th>
+                    <th>Nota</th>
+                    <th>Precio unit.</th>
+                    <th>Subtotal</th>
+                    <th>Método</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {quoteItems.map((item, idx) => (
+                    <tr key={item.id}>
+                      <td>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                          <button
+                            style={{ background: "none", border: "none", cursor: "pointer", padding: "0 4px", fontSize: "0.75em" }}
+                            onClick={() => moveItemUp(item.id)}
+                            disabled={idx === 0}
+                            title="Subir"
+                          >
+                            ▲
+                          </button>
+                          <span style={{ textAlign: "center", fontSize: "0.8em" }}>{idx + 1}</span>
+                          <button
+                            style={{ background: "none", border: "none", cursor: "pointer", padding: "0 4px", fontSize: "0.75em" }}
+                            onClick={() => moveItemDown(item.id)}
+                            disabled={idx === quoteItems.length - 1}
+                            title="Bajar"
+                          >
+                            ▼
+                          </button>
+                        </div>
+                      </td>
+                      <td>
+                        <Input
+                          type="number"
+                          value={item.widthM}
+                          onChange={(e) => updateQuoteItem(item.id, { widthM: e.target.value })}
+                          step="0.1"
+                          min="0"
+                          style={{ width: "80px" }}
+                        />
+                      </td>
+                      <td>
+                        <Input
+                          type="number"
+                          value={item.heightM}
+                          onChange={(e) => updateQuoteItem(item.id, { heightM: e.target.value })}
+                          step="0.1"
+                          min="0"
+                          style={{ width: "80px" }}
+                        />
+                      </td>
+                      <td>
+                        <Input
+                          type="number"
+                          value={item.quantity}
+                          onChange={(e) => updateQuoteItem(item.id, { quantity: e.target.value })}
+                          min="1"
+                          style={{ width: "60px" }}
+                        />
+                      </td>
+                      <td>
+                        {/* SPEC-33: category selector + new inline */}
+                        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                          <select
+                            className="t-input"
+                            style={{ width: "120px", fontSize: "0.8em" }}
+                            value={item.categoryId || ""}
+                            onChange={(e) => {
+                              const cat = categories.find((c) => c.id === e.target.value);
+                              updateQuoteItem(item.id, {
+                                categoryId: e.target.value || undefined,
+                                categoryName: cat?.name ?? undefined
+                              });
+                            }}
+                          >
+                            <option value="">Sin categoría</option>
+                            {categories.map((cat) => (
+                              <option key={cat.id} value={cat.id}>
+                                {cat.name}
+                              </option>
+                            ))}
+                            <option value="__new__">+ Nueva...</option>
+                          </select>
+                          {item.categoryId === "__new__" || (item.categoryId === "" && item.categoryName === "__new__") ? null : null}
+                          {/* Inline creation when "__new__" selected */}
+                          {item.categoryId === "__new__" && (
+                            <div style={{ display: "flex", gap: "2px" }}>
+                              <Input
+                                type="text"
+                                value={newCategoryName}
+                                onChange={(e) => setNewCategoryName(e.target.value)}
+                                placeholder="Nombre"
+                                style={{ width: "80px", fontSize: "0.8em" }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    void handleCreateCategoryForItem(item.id, newCategoryName);
+                                  }
+                                }}
+                              />
+                              <button
+                                style={{ background: "none", border: "1px solid var(--gray-300)", borderRadius: "4px", cursor: "pointer", padding: "0 4px", fontSize: "0.75em" }}
+                                onClick={() => void handleCreateCategoryForItem(item.id, newCategoryName)}
+                              >
+                                OK
+                              </button>
+                              <button
+                                style={{ background: "none", border: "none", cursor: "pointer", padding: "0 4px", fontSize: "0.75em" }}
+                                onClick={() => { updateQuoteItem(item.id, { categoryId: undefined, categoryName: undefined }); setNewCategoryName(""); }}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <Input
+                          type="text"
+                          value={item.lineNote || ""}
+                          onChange={(e) => updateQuoteItem(item.id, { lineNote: e.target.value })}
+                          placeholder="Nota..."
+                          style={{ width: "100px", fontSize: "0.8em" }}
+                        />
+                      </td>
+                      <td>{item.unitPrice ? `$${item.unitPrice.toLocaleString()}` : "—"}</td>
+                      <td>{item.subtotal ? `$${item.subtotal.toLocaleString()}` : "—"}</td>
+                      <td style={{ fontSize: "0.8em" }}>{item.priceMethod || "—"}</td>
+                      <td className="actions-cell" style={{ whiteSpace: "nowrap" }}>
+                        <Button
+                          variant="secondary"
+                          onClick={() => handleCalculateItem(item.id)}
+                          disabled={loadingActionId === item.id}
+                          style={{ padding: "0.25rem 0.5rem", fontSize: "0.8em" }}
+                        >
+                          {loadingActionId === item.id ? <Spinner size="sm" /> : "Calc"}
+                        </Button>
+                        {quoteItems.length > 1 && (
+                          <Button
+                            variant="secondary"
+                            onClick={() => removeQuoteItem(item.id)}
+                            style={{ padding: "0.25rem 0.5rem", fontSize: "0.8em" }}
+                          >
+                            Quit
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-          {quoteResult ? <pre className="code-block">{JSON.stringify(quoteResult, null, 2)}</pre> : null}
+
+          {/* Total with operator margin */}
+          {(() => {
+            const totalBefore = quoteItems.reduce((sum, it) => sum + (it.subtotal || 0), 0);
+            const totalAfterMargin = totalBefore * (1 - operatorMargin / 100);
+            return (
+              <div style={{ marginTop: "1rem" }}>
+                <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
+                  <div style={{ flex: 1 }}>
+                    <p className="status-note">
+                      <strong>Total: ${totalAfterMargin.toLocaleString()} CLP</strong>
+                      {operatorMargin > 0 && (
+                        <span style={{ fontSize: "0.85em", marginLeft: "0.5rem" }}>
+                          (antes: ${totalBefore.toLocaleString()})
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  {/* SPEC-32: Operator margin field */}
+                  <div style={{ width: "200px" }}>
+                    <label className="field">
+                      <span>Margen operador (%)</span>
+                      <Input
+                        type="number"
+                        value={operatorMargin}
+                        onChange={(e) => setOperatorMargin(Math.max(0, Math.min(100, Number(e.target.value))))}
+                        min="0"
+                        max="100"
+                        step="0.1"
+                      />
+                      <small style={{ color: "var(--muted)" }}>* No se guarda en BD</small>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          <p className="status-note">{status}</p>
           {quotes.length > 0 ? (
             <table className="data-table"><thead><tr><th>ID</th><th>Medida</th><th>Cant.</th><th>Total</th><th>Fecha</th></tr></thead><tbody>
               {quotes.map((row) => (
@@ -902,15 +1339,17 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                     <p className="flow-title">Lineas de venta {saleId.slice(0, 8)}</p>
                     <table className="data-table">
                       <thead>
-                        <tr><th>Linea</th><th>SKU</th><th>Medida</th><th>Cant.</th><th>Retazo asignado</th><th>Accion</th></tr>
+                        <tr><th>#</th><th>Categoria</th><th>SKU</th><th>Medida</th><th>Cant.</th><th>Nota</th><th>Retazo asignado</th><th>Accion</th></tr>
                       </thead>
                       <tbody>
-                        {selectedSale.lines.map((line) => (
+                        {selectedSale.lines.map((line, li) => (
                           <tr key={line.id}>
-                            <td>{line.id.slice(0, 8)}</td>
+                            <td>{li + 1}</td>
+                            <td>{line.categoryName ?? "—"}</td>
                             <td>{line.skuCode}</td>
                             <td>{line.requestedWidthM} x {line.requestedHeightM}</td>
                             <td>{line.quantity}</td>
+                            <td style={{ fontSize: "0.8em", color: "var(--muted)" }}>{line.lineNote ?? "—"}</td>
                             <td>{line.allocatedScrapId ? `✓ ${line.allocatedScrapId.slice(0, 8)}` : "—"}</td>
                             <td>
                               {selectedSale.status === "DRAFT" && !line.allocatedScrapId ? (

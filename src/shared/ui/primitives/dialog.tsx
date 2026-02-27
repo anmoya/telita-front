@@ -7,9 +7,26 @@ type DialogProps = {
   onClose: () => void;
   title: string;
   children: ReactNode;
+  blockBackButton?: boolean; // SPEC-30: Prevent Back button from closing modal
 };
 
-export function Dialog({ open, onClose, title, children }: DialogProps) {
+export function Dialog({ open, onClose, title, children, blockBackButton = true }: DialogProps) {
+  useEffect(() => {
+    if (!open || !blockBackButton) return;
+
+    // SPEC-30: Block browser back button while modal is open
+    window.history.pushState(null, "", window.location.href);
+
+    function handlePopState(e: PopStateEvent) {
+      e.preventDefault();
+      window.history.pushState(null, "", window.location.href);
+      // Modal stays open, no navigation
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [open, blockBackButton]);
+
   useEffect(() => {
     if (!open) return;
     function handleKeydown(e: KeyboardEvent) {

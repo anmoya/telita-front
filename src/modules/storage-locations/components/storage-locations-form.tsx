@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/primitives/button";
 import { Input } from "../../../shared/ui/primitives/input";
+import { Select } from "../../../shared/ui/primitives/select";
+import { Alert } from "../../../shared/ui/primitives/alert";
 import { Dialog } from "../../../shared/ui/primitives/dialog";
 import { Spinner } from "../../../shared/ui/primitives/spinner";
 import { TableSkeleton } from "../../../shared/ui/primitives/table-skeleton";
@@ -402,8 +404,7 @@ export function StorageLocationsForm({ accessToken, apiUrl, currentUserRole }: S
       <div className="module-header-row">
         <div className="module-filter">
           <label className="input-label">Sucursal</label>
-          <select
-            className="t-input"
+          <Select
             value={selectedBranch}
             onChange={(e) => setSelectedBranch(e.target.value)}
           >
@@ -412,7 +413,7 @@ export function StorageLocationsForm({ accessToken, apiUrl, currentUserRole }: S
                 {branch.name}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         {canManageLocations && (
@@ -428,22 +429,16 @@ export function StorageLocationsForm({ accessToken, apiUrl, currentUserRole }: S
       </div>
 
       {bulkResult && (
-        <div className="success-banner">
+        <Alert variant="success" onClose={() => setBulkResult(null)}>
           Generador masivo completado: <strong>{bulkResult.created}</strong> ubicaciones creadas
           {bulkResult.skipped > 0 && <>, {bulkResult.skipped} ya existian (omitidas)</>}
-          <button className="error-close" onClick={() => setBulkResult(null)}>
-            x
-          </button>
-        </div>
+        </Alert>
       )}
 
       {errorMsg && (
-        <div className="error-banner">
+        <Alert variant="error" onClose={() => setErrorMsg("")}>
           {errorMsg}
-          <button className="error-close" onClick={() => setErrorMsg("")}>
-            x
-          </button>
-        </div>
+        </Alert>
       )}
 
       {loadingMenu ? (
@@ -515,8 +510,7 @@ export function StorageLocationsForm({ accessToken, apiUrl, currentUserRole }: S
         <div className="form-grid">
           <div className="form-field">
             <label className="input-label">Sucursal *</label>
-            <select
-              className="t-input"
+            <Select
               value={createBranchCode || selectedBranch}
               onChange={(e) => setCreateBranchCode(e.target.value)}
             >
@@ -525,7 +519,7 @@ export function StorageLocationsForm({ accessToken, apiUrl, currentUserRole }: S
                   {branch.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
           <div className="form-field">
@@ -661,14 +655,13 @@ export function StorageLocationsForm({ accessToken, apiUrl, currentUserRole }: S
           <div className="form-grid">
             <div className="form-field">
               <label className="input-label">Modo de fila</label>
-              <select
-                className="t-input"
+              <Select
                 value={bulkRowMode}
                 onChange={(e) => setBulkRowMode(e.target.value as "LETTER" | "FIXED")}
               >
                 <option value="LETTER">Letras (A-Z)</option>
                 <option value="FIXED">Texto fijo</option>
-              </select>
+              </Select>
             </div>
 
             <div style={{ display: "flex", gap: "0.75rem" }}>

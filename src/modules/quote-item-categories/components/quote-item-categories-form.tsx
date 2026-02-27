@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/primitives/button";
 import { Input } from "../../../shared/ui/primitives/input";
 import { Dialog } from "../../../shared/ui/primitives/dialog";
+import { Alert } from "../../../shared/ui/primitives/alert";
 import { Spinner } from "../../../shared/ui/primitives/spinner";
 import { TableSkeleton } from "../../../shared/ui/primitives/table-skeleton";
 
@@ -39,7 +40,7 @@ export function QuoteItemCategoriesForm({ accessToken, apiUrl, currentUserRole }
 
   useEffect(() => {
     loadCategories();
-  }, [accessToken]); // eslint-disable-line
+  }, [accessToken]);
 
   async function loadCategories() {
     setLoadingMenu(true);
@@ -207,60 +208,48 @@ export function QuoteItemCategoriesForm({ accessToken, apiUrl, currentUserRole }
 
       {/* Modal: crear */}
       {activeModal === "create" && (
-        <Dialog onClose={() => setActiveModal(null)}>
-          <div className="dialog-header">
-            <h2 className="dialog-title">Nueva categoria</h2>
-            <button className="dialog-close" onClick={() => setActiveModal(null)}>
-              ×
-            </button>
-          </div>
-          <div className="dialog-body">
-            {errorMsg && <p className="error-msg">{errorMsg}</p>}
-            <label>Nombre</label>
+        <Dialog open={activeModal === "create"} onClose={() => setActiveModal(null)} title="Nueva categoria">
+          {errorMsg ? <Alert variant="error" onClose={() => setErrorMsg("")}>{errorMsg}</Alert> : null}
+          <label className="field">
+            <span>Nombre</span>
             <Input
               value={createName}
               onChange={(e) => setCreateName(e.target.value)}
               placeholder="Ej: LIVING"
               onKeyDown={(e) => e.key === "Enter" && handleCreate()}
             />
-            <div className="modal-actions">
-              <Button variant="secondary" onClick={() => setActiveModal(null)}>
-                Cancelar
-              </Button>
-              <Button variant="primary" onClick={handleCreate} disabled={loadingModal || !createName.trim()}>
-                {loadingModal ? <Spinner size="sm" /> : "Crear"}
-              </Button>
-            </div>
+          </label>
+          <div className="dialog-actions">
+            <Button variant="secondary" onClick={() => setActiveModal(null)}>
+              Cancelar
+            </Button>
+            <Button variant="primary" onClick={handleCreate} disabled={loadingModal || !createName.trim()}>
+              {loadingModal ? <Spinner size="sm" /> : "Crear"}
+            </Button>
           </div>
         </Dialog>
       )}
 
       {/* Modal: editar */}
       {activeModal !== null && activeModal !== "create" && (
-        <Dialog onClose={() => setActiveModal(null)}>
-          <div className="dialog-header">
-            <h2 className="dialog-title">Editar categoria</h2>
-            <button className="dialog-close" onClick={() => setActiveModal(null)}>
-              ×
-            </button>
-          </div>
-          <div className="dialog-body">
-            {errorMsg && <p className="error-msg">{errorMsg}</p>}
-            <label>Nombre</label>
+        <Dialog open={true} onClose={() => setActiveModal(null)} title="Editar categoria">
+          {errorMsg ? <Alert variant="error" onClose={() => setErrorMsg("")}>{errorMsg}</Alert> : null}
+          <label className="field">
+            <span>Nombre</span>
             <Input
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               placeholder="Ej: PIEZA"
               onKeyDown={(e) => e.key === "Enter" && handleEditSave()}
             />
-            <div className="modal-actions">
-              <Button variant="secondary" onClick={() => setActiveModal(null)}>
-                Cancelar
-              </Button>
-              <Button variant="primary" onClick={handleEditSave} disabled={loadingModal || !editName.trim()}>
-                {loadingModal ? <Spinner size="sm" /> : "Guardar"}
-              </Button>
-            </div>
+          </label>
+          <div className="dialog-actions">
+            <Button variant="secondary" onClick={() => setActiveModal(null)}>
+              Cancelar
+            </Button>
+            <Button variant="primary" onClick={handleEditSave} disabled={loadingModal || !editName.trim()}>
+              {loadingModal ? <Spinner size="sm" /> : "Guardar"}
+            </Button>
           </div>
         </Dialog>
       )}

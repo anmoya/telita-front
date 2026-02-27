@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../shared/ui/primitives/button";
 import { Input } from "../../../shared/ui/primitives/input";
+import { Select } from "../../../shared/ui/primitives/select";
 import { Dialog } from "../../../shared/ui/primitives/dialog";
 import { Spinner } from "../../../shared/ui/primitives/spinner";
 import { TableSkeleton } from "../../../shared/ui/primitives/table-skeleton";
@@ -1008,8 +1009,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
             <>
               <label className="field">
                 <span>SKU</span>
-                <select
-                  className="t-input"
+                <Select
                   value={selectedSkuCode}
                   onChange={(e) => setSelectedSkuCode(e.target.value)}
                 >
@@ -1019,12 +1019,11 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                       {sku.code} - {sku.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label className="field">
                 <span>Lista de precios</span>
-                <select
-                  className="t-input"
+                <Select
                   value={selectedPriceListName}
                   onChange={(e) => setSelectedPriceListName(e.target.value)}
                 >
@@ -1034,7 +1033,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                       {pl.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
             </>
           )}
@@ -1119,8 +1118,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                       <td>
                         {/* SPEC-33: category selector + new inline */}
                         <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                          <select
-                            className="t-input"
+                          <Select
                             style={{ width: "120px", fontSize: "0.8em" }}
                             value={item.categoryId || ""}
                             onChange={(e) => {
@@ -1138,7 +1136,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                               </option>
                             ))}
                             <option value="__new__">+ Nueva...</option>
-                          </select>
+                          </Select>
                           {item.categoryId === "__new__" || (item.categoryId === "" && item.categoryName === "__new__") ? null : null}
                           {/* Inline creation when "__new__" selected */}
                           {item.categoryId === "__new__" && (

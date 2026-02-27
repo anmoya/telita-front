@@ -26,7 +26,7 @@ export function MyProfileForm({ accessToken, apiUrl, currentUserId }: MyProfileF
 
   useEffect(() => {
     loadProfile();
-  }, [currentUserId]); // eslint-disable-line
+  }, [currentUserId]);
 
   async function loadProfile() {
     setLoadingProfile(true);

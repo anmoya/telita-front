@@ -18,6 +18,13 @@ export default [
   {
     files: ["src/modules/**/*.ts", "src/modules/**/*.tsx"],
     rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          "selector": "JSXOpeningElement[name.name='select']",
+          "message": "Use Select from src/shared/ui/primitives/select."
+        }
+      ],
       "no-restricted-imports": [
         "error",
         {

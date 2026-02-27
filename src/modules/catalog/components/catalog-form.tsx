@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/primitives/button";
 import { Input } from "../../../shared/ui/primitives/input";
+import { Select } from "../../../shared/ui/primitives/select";
 import { Dialog } from "../../../shared/ui/primitives/dialog";
 import { Spinner } from "../../../shared/ui/primitives/spinner";
 import { TableSkeleton } from "../../../shared/ui/primitives/table-skeleton";
@@ -83,7 +84,7 @@ export function CatalogForm({ accessToken, apiUrl, currentUserRole }: CatalogFor
   useEffect(() => {
     loadSkus();
     loadUnits();
-  }, [accessToken]); // eslint-disable-line
+  }, [accessToken]);
 
   async function loadSkus() {
     setLoadingMenu(true);
@@ -321,13 +322,13 @@ export function CatalogForm({ accessToken, apiUrl, currentUserRole }: CatalogFor
             </label>
             <label className="field">
               <span>Unidad</span>
-              <select value={createLengthUnitCode} onChange={(e) => setCreateLengthUnitCode(e.target.value)}>
+              <Select value={createLengthUnitCode} onChange={(e) => setCreateLengthUnitCode(e.target.value)}>
                 {units?.lengths.map((u) => (
                   <option key={u.code} value={u.code}>
                     {u.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           </div>
 
@@ -338,13 +339,13 @@ export function CatalogForm({ accessToken, apiUrl, currentUserRole }: CatalogFor
             </label>
             <label className="field">
               <span>Unidad</span>
-              <select value={createWidthUnitCode} onChange={(e) => setCreateWidthUnitCode(e.target.value)}>
+              <Select value={createWidthUnitCode} onChange={(e) => setCreateWidthUnitCode(e.target.value)}>
                 {units?.lengths.map((u) => (
                   <option key={u.code} value={u.code}>
                     {u.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           </div>
 
@@ -355,13 +356,13 @@ export function CatalogForm({ accessToken, apiUrl, currentUserRole }: CatalogFor
             </label>
             <label className="field">
               <span>Unidad</span>
-              <select value={createThicknessUnitCode} onChange={(e) => setCreateThicknessUnitCode(e.target.value)}>
+              <Select value={createThicknessUnitCode} onChange={(e) => setCreateThicknessUnitCode(e.target.value)}>
                 {units?.lengths.map((u) => (
                   <option key={u.code} value={u.code}>
                     {u.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           </div>
 
@@ -372,13 +373,13 @@ export function CatalogForm({ accessToken, apiUrl, currentUserRole }: CatalogFor
             </label>
             <label className="field">
               <span>Unidad</span>
-              <select value={createWeightUnitCode} onChange={(e) => setCreateWeightUnitCode(e.target.value)}>
+              <Select value={createWeightUnitCode} onChange={(e) => setCreateWeightUnitCode(e.target.value)}>
                 {units?.weights.map((u) => (
                   <option key={u.code} value={u.code}>
                     {u.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           </div>
 
@@ -417,13 +418,13 @@ export function CatalogForm({ accessToken, apiUrl, currentUserRole }: CatalogFor
               </label>
               <label className="field">
                 <span>Unidad</span>
-                <select value={editLengthUnitCode} onChange={(e) => setEditLengthUnitCode(e.target.value)}>
+                <Select value={editLengthUnitCode} onChange={(e) => setEditLengthUnitCode(e.target.value)}>
                   {units?.lengths.map((u) => (
                     <option key={u.code} value={u.code}>
                       {u.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
             </div>
 
@@ -434,13 +435,13 @@ export function CatalogForm({ accessToken, apiUrl, currentUserRole }: CatalogFor
               </label>
               <label className="field">
                 <span>Unidad</span>
-                <select value={editWidthUnitCode} onChange={(e) => setEditWidthUnitCode(e.target.value)}>
+                <Select value={editWidthUnitCode} onChange={(e) => setEditWidthUnitCode(e.target.value)}>
                   {units?.lengths.map((u) => (
                     <option key={u.code} value={u.code}>
                       {u.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
             </div>
 
@@ -451,13 +452,13 @@ export function CatalogForm({ accessToken, apiUrl, currentUserRole }: CatalogFor
               </label>
               <label className="field">
                 <span>Unidad</span>
-                <select value={editThicknessUnitCode} onChange={(e) => setEditThicknessUnitCode(e.target.value)}>
+                <Select value={editThicknessUnitCode} onChange={(e) => setEditThicknessUnitCode(e.target.value)}>
                   {units?.lengths.map((u) => (
                     <option key={u.code} value={u.code}>
                       {u.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
             </div>
 
@@ -468,13 +469,13 @@ export function CatalogForm({ accessToken, apiUrl, currentUserRole }: CatalogFor
               </label>
               <label className="field">
                 <span>Unidad</span>
-                <select value={editWeightUnitCode} onChange={(e) => setEditWeightUnitCode(e.target.value)}>
+                <Select value={editWeightUnitCode} onChange={(e) => setEditWeightUnitCode(e.target.value)}>
                   {units?.weights.map((u) => (
                     <option key={u.code} value={u.code}>
                       {u.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
             </div>
 

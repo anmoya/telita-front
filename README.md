@@ -12,6 +12,7 @@ Web app operativa de Telita para cotizar cortes, gestionar retazos e imprimir et
 - Modulos de negocio usan wrappers de UI en `src/shared/ui/primitives`.
 - Manejo de fechas via `src/shared/time`.
 - Enforced con `eslint.config.mjs`.
+- Guia de desacople UI: `docs/frontend-ui-architecture.md`.
 
 ## Requisitos
 - Node.js 22.x

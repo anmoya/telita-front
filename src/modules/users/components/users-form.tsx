@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/primitives/button";
 import { Input } from "../../../shared/ui/primitives/input";
+import { Select } from "../../../shared/ui/primitives/select";
 import { Dialog } from "../../../shared/ui/primitives/dialog";
 import { Spinner } from "../../../shared/ui/primitives/spinner";
 import { TableSkeleton } from "../../../shared/ui/primitives/table-skeleton";
@@ -61,7 +62,7 @@ export function UsersForm({ accessToken, apiUrl, currentUserRole, currentUserId 
 
   useEffect(() => {
     loadUsers();
-  }, [accessToken]); // eslint-disable-line
+  }, [accessToken]);
 
   async function loadUsers() {
     setLoadingMenu(true);
@@ -291,11 +292,11 @@ export function UsersForm({ accessToken, apiUrl, currentUserRole, currentUserId 
           </label>
           <label className="field">
             <span>Rol</span>
-            <select value={createRole} onChange={(e) => setCreateRole(e.target.value as UserRole)}>
+            <Select value={createRole} onChange={(e) => setCreateRole(e.target.value as UserRole)}>
               {availableRoles.map((r) => (
                 <option key={r} value={r}>{ROLE_LABELS[r]}</option>
               ))}
-            </select>
+            </Select>
           </label>
           <label className="field">
             <span>Código sucursal</span>
@@ -327,11 +328,11 @@ export function UsersForm({ accessToken, apiUrl, currentUserRole, currentUserId 
             <>
               <label className="field">
                 <span>Rol</span>
-                <select value={editRole} onChange={(e) => setEditRole(e.target.value as UserRole)}>
+                <Select value={editRole} onChange={(e) => setEditRole(e.target.value as UserRole)}>
                   {availableRoles.map((r) => (
                     <option key={r} value={r}>{ROLE_LABELS[r]}</option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label className="field">
                 <span>Código sucursal</span>

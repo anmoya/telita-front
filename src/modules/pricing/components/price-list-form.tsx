@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../shared/ui/primitives/button";
 import { Input } from "../../../shared/ui/primitives/input";
+import { Select } from "../../../shared/ui/primitives/select";
+import { Alert } from "../../../shared/ui/primitives/alert";
 import { Dialog } from "../../../shared/ui/primitives/dialog";
 import { Spinner } from "../../../shared/ui/primitives/spinner";
 import { TableSkeleton } from "../../../shared/ui/primitives/table-skeleton";
@@ -523,12 +525,9 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
   return (
     <div className="price-list-container">
       {error && (
-        <div className="error-banner">
-          <span>{error}</span>
-          <button onClick={() => setError("")} className="error-close">
-            ×
-          </button>
-        </div>
+        <Alert variant="error" onClose={() => setError("")}>
+          {error}
+        </Alert>
       )}
 
       {/* Breadcrumb */}
@@ -750,14 +749,13 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
           </div>
           <div className="form-field">
             <label>Moneda</label>
-            <select
-              className="t-input"
+            <Select
               value={listForm.currencyCode}
               onChange={(e) => setListForm({ ...listForm, currencyCode: e.target.value })}
             >
               <option value="CLP">CLP</option>
               <option value="USD">USD</option>
-            </select>
+            </Select>
           </div>
           <div className="form-field">
             <label>Desde</label>
@@ -798,14 +796,13 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
           </div>
           <div className="form-field">
             <label>Moneda</label>
-            <select
-              className="t-input"
+            <Select
               value={listForm.currencyCode}
               onChange={(e) => setListForm({ ...listForm, currencyCode: e.target.value })}
             >
               <option value="CLP">CLP</option>
               <option value="USD">USD</option>
-            </select>
+            </Select>
           </div>
           <div className="form-field">
             <label>Desde</label>
@@ -856,8 +853,7 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
                 {loadingSkus ? (
                   <Spinner />
                 ) : (
-                  <select
-                    className="t-input"
+                  <Select
                     value={itemForm.skuCode}
                     onChange={(e) => setItemForm({ ...itemForm, skuCode: e.target.value })}
                   >
@@ -867,7 +863,7 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
                         {sku.code} - {sku.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 )}
               </div>
               <div className="form-field">
@@ -982,8 +978,7 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
             {loadingSkus ? (
               <Spinner />
             ) : (
-              <select
-                className="t-input"
+              <Select
                 value={cellForm.skuCode}
                 onChange={(e) => setCellForm({ ...cellForm, skuCode: e.target.value })}
               >
@@ -993,7 +988,7 @@ export function PriceListForm({ accessToken, apiUrl, currentUserRole }: PriceLis
                     {sku.code} - {sku.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             )}
           </div>
           <div className="form-field">

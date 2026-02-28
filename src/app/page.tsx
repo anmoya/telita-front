@@ -11,6 +11,8 @@ import { PriceListForm } from "../modules/pricing/components/price-list-form";
 import { StorageLocationsForm } from "../modules/storage-locations/components/storage-locations-form";
 import { QuoteItemCategoriesForm } from "../modules/quote-item-categories/components/quote-item-categories-form";
 import { QuoteBatchesForm } from "../modules/quote-batches/components/quote-batches-form";
+import { WelcomeModal } from "../modules/onboarding/components/welcome-modal";
+import { startTour } from "../modules/onboarding/components/onboarding-tour";
 
 type MenuKey =
   | "dashboard"
@@ -58,10 +60,15 @@ export default function HomePage() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [activeMenu, setActiveMenu] = useState<MenuKey>("dashboard");
+  const [showWelcome, setShowWelcome] = useState(false);
 
   useEffect(() => {
     const token = window.localStorage.getItem("telita_access_token");
-    if (token) setAccessToken(token);
+    if (token) {
+      setAccessToken(token);
+      const onboardingDone = window.localStorage.getItem("telita_onboarding_completed");
+      if (!onboardingDone) setShowWelcome(true);
+    }
     setIsReady(true);
   }, []);
 
@@ -76,6 +83,41 @@ export default function HomePage() {
     [tokenInfo]
   );
 
+  function handleLoginSuccess(token: string, onboardingCompletedAt: string | null) {
+    setAccessToken(token);
+    // El servidor manda la verdad: si onboardingCompletedAt es null, el usuario nunca completó el tour
+    // No confiamos en localStorage aquí porque es compartido entre usuarios del mismo navegador
+    if (!onboardingCompletedAt) {
+      window.localStorage.removeItem("telita_onboarding_completed");
+      setShowWelcome(true);
+    } else {
+      window.localStorage.setItem("telita_onboarding_completed", "true");
+    }
+  }
+
+  async function markOnboardingDone() {
+    const info = accessToken ? decodeToken(accessToken) : null;
+    if (!info) return;
+    try {
+      await fetch(`${apiUrl}/users/${info.sub}/onboarding-complete`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+    } catch {
+      // best-effort
+    }
+    window.localStorage.setItem("telita_onboarding_completed", "true");
+  }
+
+  function handleStartTour() {
+    setShowWelcome(false);
+    startTour((menu) => setActiveMenu(menu as MenuKey), () => { void markOnboardingDone(); });
+  }
+
+  function handleDismissWelcome() {
+    setShowWelcome(false);
+  }
+
   function handleLogout() {
     window.localStorage.removeItem("telita_access_token");
     setAccessToken(null);
@@ -85,7 +127,7 @@ export default function HomePage() {
   if (!isReady) return <main className="auth-shell" />;
 
   if (!accessToken) {
-    return <LoginScreen apiUrl={apiUrl} onLoginSuccess={setAccessToken} />;
+    return <LoginScreen apiUrl={apiUrl} onLoginSuccess={handleLoginSuccess} />;
   }
 
   return (
@@ -103,6 +145,7 @@ export default function HomePage() {
           {menuItems.map((item) => (
             <button
               key={item.key}
+              id={`menu-item-${item.key}`}
               className={`nav-item ${activeMenu === item.key ? "nav-item-active" : ""}`.trim()}
               onClick={() => setActiveMenu(item.key)}
             >
@@ -150,6 +193,7 @@ export default function HomePage() {
             accessToken={accessToken}
             apiUrl={apiUrl}
             currentUserId={tokenInfo.sub}
+            onStartTour={() => startTour((menu) => setActiveMenu(menu as MenuKey), () => { void markOnboardingDone(); })}
           />
         )}
         {activeMenu === "listas-precios" && tokenInfo && (
@@ -184,6 +228,10 @@ export default function HomePage() {
           <QuoteForm accessToken={accessToken} activeMenu={activeMenu} onNavigate={setActiveMenu} />
         )}
       </section>
+
+      {showWelcome && (
+        <WelcomeModal onStartTour={handleStartTour} onDismiss={handleDismissWelcome} />
+      )}
     </main>
   );
 }

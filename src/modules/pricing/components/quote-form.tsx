@@ -1436,7 +1436,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
       ) : null}
 
       {activeMenu === "pricing" ? (
-        <article className="flow-card">
+        <article className="flow-card" id="section-pricing">
           <p className="flow-title">Cotizacion</p>
           {/* SPEC-32: Dynamic selectors */}
           {loadingSelectors ? (
@@ -1779,7 +1779,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
       ) : null}
 
       {activeMenu === "sales" ? (
-        <article className="flow-card">
+        <article className="flow-card" id="section-sales">
           <p className="flow-title">Ventas y Corte</p>
           <p className="status-note">{salesStatus}</p>
           <p className="status-note">SaleId activo: {saleId ? saleId.slice(0, 8) : "ninguno — click en una fila para seleccionar"}</p>
@@ -2007,7 +2007,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
       ) : null}
 
       {activeMenu === "cuts" ? (
-        <article className="flow-card">
+        <article className="flow-card" id="section-cuts">
           <p className="flow-title">Cortes (Cut Jobs)</p>
           <p className="status-note">{cutsStatus}</p>
           {flowRules ? (
@@ -2077,7 +2077,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
       ) : null}
 
       {activeMenu === "scraps" ? (
-        <article className="flow-card">
+        <article className="flow-card" id="section-scraps">
           <p className="flow-title">Retazos y Ubicaciones</p>
           <p className="status-note">{scrapStatus}</p>
           <div className="inline-actions">

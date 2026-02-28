@@ -6,7 +6,7 @@ import { Input } from "../../../shared/ui/primitives/input";
 
 type LoginScreenProps = {
   apiUrl: string;
-  onLoginSuccess: (accessToken: string) => void;
+  onLoginSuccess: (accessToken: string, onboardingCompletedAt: string | null) => void;
 };
 
 export function LoginScreen({ apiUrl, onLoginSuccess }: LoginScreenProps) {
@@ -28,7 +28,11 @@ export function LoginScreen({ apiUrl, onLoginSuccess }: LoginScreenProps) {
     }
 
     window.localStorage.setItem("telita_access_token", body.accessToken);
-    onLoginSuccess(body.accessToken);
+    const onboardingCompletedAt: string | null = body.user?.onboardingCompletedAt ?? null;
+    if (onboardingCompletedAt) {
+      window.localStorage.setItem("telita_onboarding_completed", "true");
+    }
+    onLoginSuccess(body.accessToken, onboardingCompletedAt);
   }
 
   return (

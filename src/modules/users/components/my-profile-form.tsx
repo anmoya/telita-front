@@ -9,9 +9,10 @@ type MyProfileFormProps = {
   accessToken: string;
   apiUrl: string;
   currentUserId: string;
+  onStartTour?: () => void;
 };
 
-export function MyProfileForm({ accessToken, apiUrl, currentUserId }: MyProfileFormProps) {
+export function MyProfileForm({ accessToken, apiUrl, currentUserId, onStartTour }: MyProfileFormProps) {
   const [fullName, setFullName] = useState("");
   const [originalFullName, setOriginalFullName] = useState("");
   const [loadingProfile, setLoadingProfile] = useState(false);
@@ -122,6 +123,11 @@ export function MyProfileForm({ accessToken, apiUrl, currentUserId }: MyProfileF
         >
           {savingProfile ? <Spinner size="sm" /> : "Guardar nombre"}
         </Button>
+        {onStartTour && (
+          <Button variant="secondary" onClick={onStartTour}>
+            Ver tutorial
+          </Button>
+        )}
       </section>
 
       <hr style={{ margin: "24px 0", borderColor: "var(--color-border, #e5e7eb)" }} />

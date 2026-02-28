@@ -91,7 +91,9 @@ body {
 .app-content-2026 {
   min-width: 0;
   display: grid;
+  grid-template-rows: auto 1fr;
   gap: 0.9rem;
+  align-items: start;
 }
 
 .brand-block {
@@ -203,11 +205,13 @@ body {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 0.75rem 1rem;
+  padding: 0 1rem;
   display: flex;
   justify-content: space-between;
   gap: 0.8rem;
   align-items: center;
+  height: 64px;       /* BUG-10: altura fija, nunca crece */
+  align-self: start;  /* no se estira en el grid */
 }
 
 .topbar-kicker {
@@ -220,8 +224,11 @@ body {
 }
 
 .topbar-title {
-  margin: 0.3rem 0 0;
+  margin: 0.2rem 0 0;
   font-size: 1.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .topbar-user {
@@ -274,6 +281,26 @@ body {
 .field > span {
   font-size: 0.82rem;
   color: var(--muted);
+}
+
+.t-form-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.t-form-label {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.t-form-hint {
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.t-form-error {
+  font-size: 0.76rem;
+  color: var(--danger);
 }
 
 .flow-grid {
@@ -337,6 +364,13 @@ body {
   color: var(--ink);
   text-decoration: none;
   font-size: 0.82rem;
+}
+
+.t-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem;
 }
 
 /* ── Price List Form ─────────────────────────────────── */
@@ -403,6 +437,25 @@ body {
   padding: 2rem !important;
 }
 
+.t-empty-state {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  color: var(--muted);
+}
+
+.t-empty-title {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.t-empty-description {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+}
+
 .status-badge {
   display: inline-block;
   padding: 0.2rem 0.5rem;
@@ -419,6 +472,29 @@ body {
 .status-inactive {
   background: #f3f4f6;
   color: #6b7280;
+}
+
+.t-badge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.t-badge-neutral {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.t-badge-success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.t-badge-danger {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .success-banner {
@@ -792,4 +868,28 @@ body {
 @keyframes t-pulse {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.35; }
+}
+
+/* ── Print (spec-38 quote preview) ───────────────────── */
+@media print {
+  .app-sidebar-2026,
+  .topbar-2026,
+  .dialog-header,
+  .dialog-close,
+  button {
+    display: none !important;
+  }
+  .dialog-overlay {
+    position: static !important;
+    background: none !important;
+  }
+  .dialog-panel {
+    box-shadow: none !important;
+    border: none !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+  #quote-preview-printable {
+    padding: 1rem;
+  }
 }

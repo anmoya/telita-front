@@ -13,6 +13,9 @@ Web app operativa de Telita para cotizar cortes, gestionar retazos e imprimir et
 - Manejo de fechas via `src/shared/time`.
 - Enforced con `eslint.config.mjs`.
 - Guia de desacople UI: `docs/frontend-ui-architecture.md`.
+- Playbook de plataforma (spec 40-45): `docs/platform-migration-playbook.md`.
+- Check automatizado de plataforma: `./scripts/platform-readiness-check.sh`.
+- Scaffold base reusable: `./scripts/scaffold-telita-base.sh <target_dir> <app_name>`.
 
 ## Requisitos
 - Node.js 22.x

@@ -23,6 +23,10 @@ export default [
         {
           "selector": "JSXOpeningElement[name.name='select']",
           "message": "Use Select from src/shared/ui/primitives/select."
+        },
+        {
+          "selector": "JSXOpeningElement[name.name='textarea']",
+          "message": "Use Textarea from src/shared/ui/primitives/textarea."
         }
       ],
       "no-restricted-imports": [

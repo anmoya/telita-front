@@ -283,6 +283,26 @@ body {
   color: var(--muted);
 }
 
+.t-form-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.t-form-label {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.t-form-hint {
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.t-form-error {
+  font-size: 0.76rem;
+  color: var(--danger);
+}
+
 .flow-grid {
   display: grid;
   gap: 0.8rem;
@@ -344,6 +364,13 @@ body {
   color: var(--ink);
   text-decoration: none;
   font-size: 0.82rem;
+}
+
+.t-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem;
 }
 
 /* ── Price List Form ─────────────────────────────────── */
@@ -410,6 +437,25 @@ body {
   padding: 2rem !important;
 }
 
+.t-empty-state {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  color: var(--muted);
+}
+
+.t-empty-title {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.t-empty-description {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+}
+
 .status-badge {
   display: inline-block;
   padding: 0.2rem 0.5rem;
@@ -426,6 +472,29 @@ body {
 .status-inactive {
   background: #f3f4f6;
   color: #6b7280;
+}
+
+.t-badge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.t-badge-neutral {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.t-badge-success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.t-badge-danger {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .success-banner {

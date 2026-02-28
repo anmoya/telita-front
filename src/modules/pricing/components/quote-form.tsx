@@ -10,7 +10,7 @@ import { TableSkeleton } from "../../../shared/ui/primitives/table-skeleton";
 import { formatLocalDateTime } from "../../../shared/time/date-service";
 import { fetchStatusLabels, getStatusLabel, type StatusLabelsByEntity, type EntityType } from "../../../shared/api/status-labels";
 
-type MenuKey = "dashboard" | "pricing" | "sales" | "cuts" | "scraps" | "labels" | "audit" | "settings";
+type MenuKey = "dashboard" | "pricing" | "sales" | "cuts" | "scraps" | "labels" | "audit" | "settings" | "historial-cotizaciones";
 
 type ScrapRequiredAtStage = "NONE" | "AT_CUT" | "AT_SALE_CLOSE";
 
@@ -26,6 +26,10 @@ type QuoteItem = {
   heightM: string;
   quantity: string;
   description?: string;
+  // SPEC-34: per-item SKU + calc status
+  skuCode?: string;
+  calcStatus?: "pending" | "ok" | "error";
+  calcError?: string;
   unitPrice?: number;
   subtotal?: number;
   priceMethod?: string;
@@ -39,6 +43,30 @@ type QuoteItemCategory = {
   id: string;
   name: string;
   isActive: boolean;
+};
+
+type PreviewLine = {
+  index: number;
+  skuCode: string;
+  description: string;
+  categoryName: string | null;
+  requestedWidthM: number;
+  requestedHeightM: number;
+  quantity: number;
+  unitPrice: number;
+  subtotal: number;
+  priceMethod: string;
+  linearMeters?: number;
+  error?: string;
+};
+
+type PreviewResult = {
+  header: { branchName: string; date: string; priceListName: string };
+  customer: { name: string | null; reference: string | null };
+  lines: PreviewLine[];
+  totals: { subtotal: number; tax: number; total: number; currencyCode: string };
+  hasErrors: boolean;
+  internalBreakdown?: unknown;
 };
 
 type QuoteRow = {
@@ -89,6 +117,8 @@ type SaleRow = {
   subtotalAmount: number;
   taxAmount: number;
   totalAmount: number;
+  amountPaid: number;
+  balanceDue: number;
   lines: SaleLineRow[];
 };
 
@@ -151,6 +181,27 @@ type AuditRow = {
   createdAt: string;
 };
 
+const ENTITY_TYPE_LABELS: Record<string, string> = {
+  sale: "Venta",
+  sale_line: "Línea de venta",
+  cut_job: "Trabajo de corte",
+  scrap: "Retazo",
+  label: "Etiqueta",
+  quote_batch: "Cotización",
+  price_list: "Lista de precios",
+  fabric_sku: "SKU",
+  app_user: "Usuario",
+  storage_location: "Ubicación"
+};
+
+const AUDIT_ACTION_LABELS: Record<string, string> = {
+  CREATE: "Creación",
+  UPDATE: "Actualización",
+  STATUS_CHANGE: "Cambio de estado",
+  DELETE: "Eliminación",
+  PRINT: "Impresión"
+};
+
 type CutJobStatus = "PENDING" | "IN_PROGRESS" | "CUT" | "DELIVERED";
 
 type CutJobRow = {
@@ -173,6 +224,44 @@ type QuoteFormProps = {
   onNavigate: (menu: MenuKey) => void;
 };
 
+// SPEC-36: Bloque estándar de totales
+function TotalsBlock({
+  subtotal,
+  tax,
+  total,
+  amountPaid,
+  balanceDue,
+  marginActive
+}: {
+  subtotal: number;
+  tax: number;
+  total: number;
+  amountPaid?: number;
+  balanceDue?: number;
+  marginActive?: boolean;
+}) {
+  return (
+    <div style={{ fontSize: "0.9em", lineHeight: "1.8" }}>
+      <div>Subtotal: <strong>${subtotal.toLocaleString()}</strong></div>
+      <div>IVA (19%): <strong>${Math.round(tax).toLocaleString()}</strong></div>
+      <div>Total: <strong>${Math.round(total).toLocaleString()} CLP</strong></div>
+      {amountPaid !== undefined && (
+        <div style={{ color: amountPaid > 0 ? "var(--ok, green)" : undefined }}>
+          Abonado: <strong>${amountPaid.toLocaleString()}</strong>
+        </div>
+      )}
+      {balanceDue !== undefined && (
+        <div style={{ color: balanceDue > 0 ? "var(--error, red)" : "var(--ok, green)", fontWeight: 600 }}>
+          Saldo: ${balanceDue.toLocaleString()}
+        </div>
+      )}
+      {marginActive && (
+        <div style={{ fontSize: "0.8em", color: "var(--muted)" }}>* Total ajustado con margen operador (solo vista)</div>
+      )}
+    </div>
+  );
+}
+
 export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProps) {
   const apiUrl = process.env.NEXT_PUBLIC_TELITA_API_URL ?? "http://localhost:3001/v1";
 
@@ -181,7 +270,6 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   const [quantity, setQuantity] = useState("1");
 
   // SPEC-32: Selectores dinámicos
-  const [selectedSkuCode, setSelectedSkuCode] = useState("");
   const [selectedPriceListName, setSelectedPriceListName] = useState("");
   const [skuOptions, setSkuOptions] = useState<Array<{ code: string; name: string }>>([]);
   const [priceListOptions, setPriceListOptions] = useState<Array<{ name: string; isActive: boolean }>>([]);
@@ -196,6 +284,30 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   const [categories, setCategories] = useState<QuoteItemCategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState("");
 
+  // SPEC-34: batch calculation state
+  const [loadingBatch, setLoadingBatch] = useState(false);
+
+  // SPEC-35: customer fields in cotizador + create draft state
+  const [quoteCustomerName, setQuoteCustomerName] = useState("");
+  const [quoteCustomerReference, setQuoteCustomerReference] = useState("");
+  const [loadingCreateDraft, setLoadingCreateDraft] = useState(false);
+  const [highlightedSaleId, setHighlightedSaleId] = useState<string | null>(null);
+
+  // BUG-6: label preview modal
+  const [labelPreview, setLabelPreview] = useState<{ id: string; url: string } | null>(null);
+
+  // BUG-3: dedicated state for adding a single line to an existing sale
+  const [newLineSkuCode, setNewLineSkuCode] = useState("");
+  const [newLineWidth, setNewLineWidth] = useState("2.0");
+  const [newLineHeight, setNewLineHeight] = useState("2.0");
+  const [newLineQty, setNewLineQty] = useState("1");
+
+  // SPEC-38: Preview
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewMode, setPreviewMode] = useState<"CUSTOMER" | "INTERNAL">("CUSTOMER");
+  const [previewData, setPreviewData] = useState<PreviewResult | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+
   // SPEC-32: Operator margin (no persistido en BD)
   const [operatorMargin, setOperatorMargin] = useState(0);
 
@@ -206,6 +318,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   const [cutsStatus, setCutsStatus] = useState<string>("");
 
   const [saleId, setSaleId] = useState("");
+  const [amountPaidInput, setAmountPaidInput] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerReference, setCustomerReference] = useState("");
   const [scrapId, setScrapId] = useState("");
@@ -241,6 +354,10 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   const [batchResults, setBatchResults] = useState<BatchLabelResult[]>([]);
   const [labelList, setLabelList] = useState<LabelRow[]>([]);
   const [batchSaleId, setBatchSaleId] = useState("");
+
+  // SPEC-25: multi-select for batch print
+  const [selectedScrapIds, setSelectedScrapIds] = useState<string[]>([]);
+  const [selectedLabelIds, setSelectedLabelIds] = useState<string[]>([]);
 
   const [dashboardKpis, setDashboardKpis] = useState<DashboardKpis | null>(null);
   const [pendingScraps, setPendingScraps] = useState<PendingScrapRow[]>([]);
@@ -284,6 +401,257 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     setQuoteItems(
       quoteItems.map((item) => (item.id === id ? { ...item, ...updates } : item))
     );
+  }
+
+  // SPEC-34: Calcular todo vía quote-batch
+  async function handleCalculateAll() {
+    if (!selectedPriceListName) {
+      setStatus("Selecciona una lista de precios");
+      return;
+    }
+    const itemsWithSku = quoteItems.map((it) => ({ ...it, resolvedSku: it.skuCode ?? "" }));
+    if (itemsWithSku.some((it) => !it.resolvedSku)) {
+      setStatus("Asigna un SKU a todos los ítems");
+      return;
+    }
+    setLoadingBatch(true);
+    // Reset calc status
+    setQuoteItems((prev) => prev.map((it) => ({ ...it, calcStatus: "pending" as const, calcError: undefined })));
+    try {
+      const response = await authedFetch(`${apiUrl}/pricing/quote-batch`, {
+        method: "POST",
+        body: JSON.stringify({
+          branchCode: "MAIN",
+          priceListName: selectedPriceListName,
+          items: itemsWithSku.map((it) => ({
+            clientItemId: it.id,
+            skuCode: it.resolvedSku,
+            requestedWidthM: Number(it.widthM),
+            requestedHeightM: Number(it.heightM),
+            quantity: Number(it.quantity),
+            description: it.description
+          }))
+        })
+      });
+      // Both 200 and 422 return the result body
+      const data = await response.json() as {
+        quoteBatchId?: string;
+        currencyCode?: string;
+        lines?: Array<{
+          clientItemId: string;
+          skuCode: string;
+          ok: boolean;
+          unitPrice?: number;
+          subtotal?: number;
+          totalRounded?: number;
+          priceMethod?: string;
+          error?: string;
+        }>;
+        subtotalAmount?: number;
+        taxAmount?: number;
+        totalAmount?: number;
+        hasErrors?: boolean;
+      };
+      if (data.lines) {
+        setQuoteItems((prev) =>
+          prev.map((it) => {
+            const line = data.lines!.find((l) => l.clientItemId === it.id);
+            if (!line) return it;
+            if (line.ok) {
+              return {
+                ...it,
+                calcStatus: "ok" as const,
+                calcError: undefined,
+                unitPrice: line.unitPrice,
+                subtotal: line.totalRounded ?? line.subtotal,  // BUG-2: usar totalRounded (post-descuento)
+                priceMethod: line.priceMethod
+              };
+            } else {
+              return { ...it, calcStatus: "error" as const, calcError: line.error };
+            }
+          })
+        );
+        if (data.hasErrors) {
+          setStatus(`Calculo con errores en algunas filas.`);
+        } else {
+          setStatus(`Total: $${(data.totalAmount ?? 0).toLocaleString()} CLP (subtotal $${(data.subtotalAmount ?? 0).toLocaleString()} + IVA $${(data.taxAmount ?? 0).toLocaleString()})`);
+        }
+      }
+    } catch (err) {
+      setStatus(`Error al calcular batch: ${String(err)}`);
+    } finally {
+      setLoadingBatch(false);
+    }
+  }
+
+  // SPEC-35: Create sale draft atomically from quote
+  async function handleCreateDraftFromQuote() {
+    if (!selectedPriceListName) {
+      setStatus("Selecciona una lista de precios");
+      return;
+    }
+    const allOk = quoteItems.every((it) => it.calcStatus === "ok");
+    if (!allOk) {
+      setStatus("Calcula todos los ítems antes de crear el draft");
+      return;
+    }
+    setLoadingCreateDraft(true);
+    try {
+      const response = await authedFetch(`${apiUrl}/sales/from-quote`, {
+        method: "POST",
+        body: JSON.stringify({
+          branchCode: "MAIN",
+          priceListName: selectedPriceListName,
+          customerName: quoteCustomerName || undefined,
+          customerReference: quoteCustomerReference || undefined,
+          items: quoteItems.map((it, idx) => ({
+            skuCode: it.skuCode ?? "",
+            requestedWidthM: Number(it.widthM),
+            requestedHeightM: Number(it.heightM),
+            quantity: Number(it.quantity),
+            categoryId: it.categoryId || undefined,
+            categoryName: !it.categoryId && it.categoryName ? it.categoryName : undefined,
+            lineNote: it.lineNote || undefined,
+            displayOrder: idx
+          }))
+        })
+      });
+      const data = await response.json() as {
+        saleId?: string;
+        quoteCode?: string;
+        status?: string;
+        linesCreated?: number;
+        subtotalAmount?: number;
+        taxAmount?: number;
+        totalAmount?: number;
+        message?: string;
+        lineErrors?: Array<{ index: number; error: string }>;
+      };
+      if (!response.ok) {
+        const detail = data.lineErrors
+          ? data.lineErrors.map((e) => `Item ${e.index + 1}: ${e.error}`).join("; ")
+          : (data.message ?? "Error desconocido");
+        setStatus(`Error: ${detail}`);
+        return;
+      }
+      // SPEC-37: save to quote batch history (best-effort, non-blocking)
+      void authedFetch(`${apiUrl}/quotes/batch`, {
+        method: "POST",
+        body: JSON.stringify({
+          branchCode: "MAIN",
+          priceListName: selectedPriceListName,
+          customerName: quoteCustomerName || undefined,
+          customerReference: quoteCustomerReference || undefined,
+          lines: quoteItems.map((it, idx) => ({
+            skuCode: it.skuCode ?? "",
+            requestedWidthM: Number(it.widthM),
+            requestedHeightM: Number(it.heightM),
+            quantity: Number(it.quantity),
+            unitPrice: it.unitPrice ?? 0,
+            lineSubtotal: it.subtotal ?? 0,
+            priceMethod: it.priceMethod ?? "LINEAR_METER",
+            categoryId: it.categoryId || undefined,
+            categoryName: !it.categoryId && it.categoryName ? it.categoryName : undefined,
+            lineNote: it.lineNote || undefined,
+            displayOrder: idx
+          }))
+        })
+      });
+      // Success: reset cotizador, navigate to sales with highlight
+      setQuoteItems([{ id: crypto.randomUUID(), widthM: "1", heightM: "1", quantity: "1" }]);
+      setQuoteCustomerName("");
+      setQuoteCustomerReference("");
+      setStatus("");
+      setHighlightedSaleId(data.saleId ?? null);
+      // Load fresh sales list then navigate
+      const salesRes = await authedFetch(`${apiUrl}/sales?branchCode=MAIN`);
+      if (salesRes.ok) {
+        const salesData = await salesRes.json() as SaleRow[];
+        setSales(salesData);
+      }
+      onNavigate("sales");
+    } catch (err) {
+      setStatus(`Error al crear draft: ${String(err)}`);
+    } finally {
+      setLoadingCreateDraft(false);
+    }
+  }
+
+  // SPEC-38: Generate preview (customer or internal)
+  async function handlePreview(mode: "CUSTOMER" | "INTERNAL") {
+    if (!selectedPriceListName) { setStatus("Selecciona una lista de precios"); return; }
+    const allOk = quoteItems.every((it) => it.calcStatus === "ok");
+    if (!allOk) { setStatus("Calcula todos los ítems antes de generar el preview"); return; }
+    setLoadingPreview(true);
+    try {
+      const res = await authedFetch(`${apiUrl}/pricing/preview`, {
+        method: "POST",
+        body: JSON.stringify({
+          mode,
+          branchCode: "MAIN",
+          priceListName: selectedPriceListName,
+          customerName: quoteCustomerName || undefined,
+          customerReference: quoteCustomerReference || undefined,
+          items: quoteItems.map((it) => ({
+            skuCode: it.skuCode ?? "",
+            requestedWidthM: Number(it.widthM),
+            requestedHeightM: Number(it.heightM),
+            quantity: Number(it.quantity),
+            description: it.description || it.skuCode || "",
+            categoryName: it.categoryName || undefined
+          }))
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json() as { message?: string };
+        setStatus(err.message ?? "Error al generar preview");
+        return;
+      }
+      const data = await res.json() as PreviewResult;
+      setPreviewData(data);
+      setPreviewMode(mode);
+      setPreviewOpen(true);
+    } catch (err) {
+      setStatus(`Error: ${String(err)}`);
+    } finally {
+      setLoadingPreview(false);
+    }
+  }
+
+  // SPEC-37: Save to quote batch history only (without creating a sale draft)
+  async function handleSaveToHistory() {
+    if (!selectedPriceListName) return;
+    try {
+      const res = await authedFetch(`${apiUrl}/quotes/batch`, {
+        method: "POST",
+        body: JSON.stringify({
+          branchCode: "MAIN",
+          priceListName: selectedPriceListName,
+          customerName: quoteCustomerName || undefined,
+          customerReference: quoteCustomerReference || undefined,
+          lines: quoteItems.map((it, idx) => ({
+            skuCode: it.skuCode ?? "",
+            requestedWidthM: Number(it.widthM),
+            requestedHeightM: Number(it.heightM),
+            quantity: Number(it.quantity),
+            unitPrice: it.unitPrice ?? 0,
+            lineSubtotal: it.subtotal ?? 0,
+            priceMethod: it.priceMethod ?? "LINEAR_METER",
+            categoryId: it.categoryId || undefined,
+            categoryName: !it.categoryId && it.categoryName ? it.categoryName : undefined,
+            lineNote: it.lineNote || undefined,
+            displayOrder: idx
+          }))
+        })
+      });
+      if (res.ok) {
+        setStatus("Cotización guardada en historial.");
+      } else {
+        setStatus("Error al guardar en historial.");
+      }
+    } catch {
+      setStatus("Error al guardar en historial.");
+    }
   }
 
   // SPEC-33: Move item up/down
@@ -336,12 +704,14 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   }
 
   async function handleCalculateItem(itemId: string) {
-    if (!selectedSkuCode || !selectedPriceListName) {
-      setStatus("Selecciona SKU y lista de precios");
-      return;
-    }
     const item = quoteItems.find((it) => it.id === itemId);
     if (!item) return;
+    
+    const effectiveSkuCode = item.skuCode ?? "";
+    if (!effectiveSkuCode || !selectedPriceListName) {
+      setStatus("Asigna SKU y lista de precios a este ítem");
+      return;
+    }
 
     setLoadingActionId(itemId);
     try {
@@ -349,19 +719,26 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
         method: "POST",
         body: JSON.stringify({
           branchCode: "MAIN",
-          skuCode: selectedSkuCode,
+          skuCode: effectiveSkuCode,
           priceListName: selectedPriceListName,
           requestedWidthM: Number(item.widthM),
           requestedHeightM: Number(item.heightM),
           quantity: Number(item.quantity)
         })
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        const msg = (body as { message?: string }).message ?? `HTTP ${response.status}`;
+        updateQuoteItem(itemId, { calcStatus: "error", calcError: msg });
+        throw new Error(msg);
+      }
       const data = await response.json();
       updateQuoteItem(itemId, {
         unitPrice: data.unitPrice,
         subtotal: data.subtotal,
-        priceMethod: data.priceMethod
+        priceMethod: data.priceMethod,
+        calcStatus: "ok",
+        calcError: undefined
       });
     } catch (error) {
       setStatus(`Error al calcular: ${String(error)}`);
@@ -381,9 +758,6 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
       if (skuRes.ok) {
         const skus = await skuRes.json();
         setSkuOptions(skus || []);
-        if (skus?.length > 0 && !selectedSkuCode) {
-          setSelectedSkuCode(skus[0].code);
-        }
       }
       if (plRes.ok) {
         const pls = await plRes.json();
@@ -439,7 +813,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
       ]);
       if (kpisRes.ok) setDashboardKpis((await kpisRes.json()) as DashboardKpis);
       if (pendingRes.ok) setPendingScraps((await pendingRes.json()) as PendingScrapRow[]);
-      if (auditRes.ok) setAuditEvents((await auditRes.json()) as AuditRow[]);
+      if (auditRes.ok) { const d = await auditRes.json() as { data: AuditRow[] }; setAuditEvents(d.data ?? []); }
     } finally {
       setLoadingMenu(false);
     }
@@ -448,8 +822,8 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   async function loadAudit() {
     setLoadingMenu(true);
     try {
-      const auditRes = await authedFetch(`${apiUrl}/audit?branchCode=MAIN&limit=50`);
-      if (auditRes.ok) setAuditEvents((await auditRes.json()) as AuditRow[]);
+      const auditRes = await authedFetch(`${apiUrl}/audit?branchCode=MAIN&limit=20`);
+      if (auditRes.ok) { const d = await auditRes.json() as { data: AuditRow[] }; setAuditEvents(d.data ?? []); }
     } finally {
       setLoadingMenu(false);
     }
@@ -557,6 +931,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
       setCutsStatus(`Corte marcado: ${cutJobId.slice(0, 8)} (sin retazo util)`);
     }
     await loadCutJobs();
+    void handleListScraps();
   }
 
   // Assign location to a scrap (used by both post-cut and scraps-table dialogs)
@@ -595,6 +970,80 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     } finally {
       setLoadingMenu(false);
     }
+  }
+
+  // SPEC-25: open batch-pdf in new tab, then register print events
+  function openBatchPdf(labelIds: string[]) {
+    if (labelIds.length === 0) return;
+    const url = `${apiUrl}/labels/batch-pdf?labelIds=${labelIds.join(",")}&accessToken=${encodeURIComponent(accessToken)}`;
+    window.open(url, "_blank", "noreferrer");
+  }
+
+  async function registerBatchPrint(labelIds: string[]) {
+    if (labelIds.length === 0) return;
+    await authedFetch(`${apiUrl}/labels/batch-print`, {
+      method: "POST",
+      body: JSON.stringify({ labelIds })
+    });
+  }
+
+  // SPEC-25: print all labels for a confirmed sale
+  async function handlePrintSaleLabels(saleId: string) {
+    setLoadingActionId(saleId);
+    try {
+      const response = await authedFetch(`${apiUrl}/labels/sale/${saleId}/batch`, {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      if (!response.ok) return;
+      const data = (await response.json()) as { labels: BatchLabelResult[] };
+      const labelIds = data.labels.map((l) => l.labelId);
+      openBatchPdf(labelIds);
+      // print events already registered by sale/batch endpoint
+    } finally {
+      setLoadingActionId(null);
+    }
+  }
+
+  // SPEC-25: print labels for selected scraps
+  async function handlePrintScrapLabels() {
+    if (selectedScrapIds.length === 0) return;
+    setLoadingMenu(true);
+    try {
+      const response = await authedFetch(`${apiUrl}/labels/batch`, {
+        method: "POST",
+        body: JSON.stringify({
+          branchCode: "MAIN",
+          items: selectedScrapIds.map((id) => ({ type: "SCRAP", scrapId: id }))
+        })
+      });
+      if (!response.ok) return;
+      const data = (await response.json()) as { labels: Array<{ labelId: string }> };
+      const labelIds = data.labels.map((l) => l.labelId);
+      openBatchPdf(labelIds);
+      await registerBatchPrint(labelIds);
+      setSelectedScrapIds([]);
+      setScrapStatus(`${labelIds.length} etiqueta(s) enviadas a imprimir.`);
+    } finally {
+      setLoadingMenu(false);
+    }
+  }
+
+  // SPEC-25: print selected labels from historial
+  async function handlePrintSelectedLabels() {
+    if (selectedLabelIds.length === 0) return;
+    openBatchPdf(selectedLabelIds);
+    await registerBatchPrint(selectedLabelIds);
+    setSelectedLabelIds([]);
+    setLabelStatus(`${selectedLabelIds.length} etiqueta(s) enviadas a imprimir.`);
+  }
+
+  function toggleScrapSelection(id: string) {
+    setSelectedScrapIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  }
+
+  function toggleLabelSelection(id: string) {
+    setSelectedLabelIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   }
 
   async function handleListLabels() {
@@ -726,39 +1175,10 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
         method: "POST",
         body: JSON.stringify({})
       });
-      setLabelStatus("Reimpresion registrada.");
+      // Abre el PDF con auto-print (batch-pdf tiene window.print() en onload)
+      openBatchPdf([id]);
+      setLabelStatus("Impresión registrada.");
       await handleListLabels();
-    } finally {
-      setLoadingActionId(null);
-    }
-  }
-
-  async function handleCalculate() {
-    if (!selectedSkuCode || !selectedPriceListName) {
-      setStatus("Selecciona SKU y lista de precios");
-      return;
-    }
-    setStatus("");
-    setQuoteResult(null);
-    setLoadingActionId("calculate");
-    try {
-      const response = await authedFetch(`${apiUrl}/pricing/quote`, {
-        method: "POST",
-        body: JSON.stringify({
-          branchCode: "MAIN",
-          skuCode: selectedSkuCode,
-          priceListName: selectedPriceListName,
-          requestedWidthM: Number(widthM),
-          requestedHeightM: Number(heightM),
-          quantity: Number(quantity)
-        })
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      setQuoteResult(data);
-      setStatus("Cotizacion guardada.");
-    } catch (error) {
-      setStatus(`Error al cotizar: ${String(error)}`);
     } finally {
       setLoadingActionId(null);
     }
@@ -818,29 +1238,45 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     await handleListSales();
   }
 
-  async function handleAddSaleLine() {
-    if (!saleId || !selectedSkuCode) {
-      setSalesStatus("Selecciona SKU y venta");
+  async function handleUpdatePaymentSummary() {
+    if (!saleId) return;
+    const amountPaid = Number(amountPaidInput);
+    if (isNaN(amountPaid) || amountPaid < 0) {
+      setSalesStatus("Monto abonado inválido");
       return;
     }
-    // SPEC-33: send items with category + displayOrder
-    for (let i = 0; i < quoteItems.length; i++) {
-      const item = quoteItems[i];
-      await authedFetch(`${apiUrl}/sales/${saleId}/lines`, {
-        method: "POST",
-        body: JSON.stringify({
-          skuCode: selectedSkuCode,
-          requestedWidthM: Number(item.widthM || widthM),
-          requestedHeightM: Number(item.heightM || heightM),
-          quantity: Number(item.quantity || quantity),
-          categoryId: item.categoryId ?? undefined,
-          categoryName: !item.categoryId && item.categoryName ? item.categoryName : undefined,
-          displayOrder: i,
-          lineNote: item.lineNote ?? undefined
-        })
+    try {
+      await authedFetch(`${apiUrl}/sales/${saleId}/payment-summary`, {
+        method: "PATCH",
+        body: JSON.stringify({ amountPaid })
       });
+      setSalesStatus("Abono registrado.");
+      setAmountPaidInput("");
+      await handleListSales();
+    } catch (err) {
+      setSalesStatus(`Error: ${String(err)}`);
     }
-    setSalesStatus("Lineas agregadas.");
+  }
+
+  async function handleAddSaleLine() {
+    if (!saleId) { setSalesStatus("Selecciona una venta primero"); return; }
+    if (!newLineSkuCode) { setSalesStatus("Selecciona un SKU"); return; }
+    const res = await authedFetch(`${apiUrl}/sales/${saleId}/lines`, {
+      method: "POST",
+      body: JSON.stringify({
+        skuCode: newLineSkuCode,
+        requestedWidthM: Number(newLineWidth),
+        requestedHeightM: Number(newLineHeight),
+        quantity: Number(newLineQty)
+      })
+    });
+    if (!res.ok) {
+      const body = await res.json() as { message?: string };
+      setSalesStatus(body.message ?? `Error HTTP ${res.status}`);
+      return;
+    }
+    setSalesStatus("Línea agregada.");
+    setNewLineSkuCode("");
     await handleListSales();
   }
 
@@ -966,8 +1402,8 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
               <tbody>
                 {auditEvents.map((row) => (
                   <tr key={row.id}>
-                    <td>{row.entityType}:{row.entityId.slice(0, 8)}</td>
-                    <td>{row.action}</td>
+                    <td>{ENTITY_TYPE_LABELS[row.entityType] ?? row.entityType}: {row.entityId.slice(0, 8).toUpperCase()}</td>
+                    <td>{AUDIT_ACTION_LABELS[row.action] ?? row.action}</td>
                     <td>{row.actor.email}</td>
                     <td>{formatLocalDateTime(row.createdAt)}</td>
                   </tr>
@@ -1008,20 +1444,6 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
           ) : (
             <>
               <label className="field">
-                <span>SKU</span>
-                <Select
-                  value={selectedSkuCode}
-                  onChange={(e) => setSelectedSkuCode(e.target.value)}
-                >
-                  <option value="">-- Selecciona SKU --</option>
-                  {skuOptions.map((sku) => (
-                    <option key={sku.code} value={sku.code}>
-                      {sku.code} - {sku.name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-              <label className="field">
                 <span>Lista de precios</span>
                 <Select
                   value={selectedPriceListName}
@@ -1038,19 +1460,40 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
             </>
           )}
 
-          {/* SPEC-32: Multi-item table */}
+          {/* SPEC-32/34: Multi-item table */}
           <div style={{ marginTop: "1rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
               <p style={{ margin: 0, fontWeight: 600 }}>Ítems de cotización</p>
-              <Button variant="secondary" onClick={addQuoteItem}>
-                + Agregar ítem
-              </Button>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <Button variant="secondary" onClick={addQuoteItem}>
+                  + Agregar ítem
+                </Button>
+                {/* SPEC-34: Calcular todo */}
+                <Button
+                  variant="primary"
+                  onClick={() => void handleCalculateAll()}
+                  disabled={loadingBatch || !selectedPriceListName}
+                  title="Calcula todos los ítems en una sola operación"
+                >
+                  {loadingBatch ? <Spinner size="sm" /> : "Calcular todo"}
+                </Button>
+                {/* SPEC-37: Guardar en historial sin crear draft */}
+                <Button
+                  variant="secondary"
+                  onClick={() => void handleSaveToHistory()}
+                  disabled={loadingBatch || !selectedPriceListName || quoteItems.some((it) => it.calcStatus !== "ok") || quoteItems.every((it) => !it.calcStatus)}
+                  title="Guarda la cotización en el historial sin crear venta"
+                >
+                  Guardar cotización
+                </Button>
+              </div>
             </div>
             <div className="table-wrapper">
               <table className="data-table">
                 <thead>
                   <tr>
                     <th>Orden</th>
+                    <th>SKU</th>
                     <th>Ancho (m)</th>
                     <th>Alto (m)</th>
                     <th>Cantidad</th>
@@ -1084,6 +1527,33 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                           >
                             ▼
                           </button>
+                        </div>
+                      </td>
+                      {/* SPEC-34: per-item SKU selector */}
+                      <td>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "2px", alignItems: "flex-start" }}>
+                          <Select
+                            style={{ width: "130px", fontSize: "0.8em" }}
+                            value={item.skuCode ?? ""}
+                            onChange={(e) => updateQuoteItem(item.id, { skuCode: e.target.value, calcStatus: undefined })}
+                          >
+                            <option value="">-- SKU --</option>
+                            {skuOptions.map((sku) => (
+                              <option key={sku.code} value={sku.code}>
+                                {sku.code}
+                              </option>
+                            ))}
+                          </Select>
+                          {/* calc status badge */}
+                          {item.calcStatus === "ok" && (
+                            <span style={{ fontSize: "0.7em", color: "var(--ok)", fontWeight: 600 }}>✓ OK</span>
+                          )}
+                          {item.calcStatus === "error" && (
+                            <span style={{ fontSize: "0.7em", color: "var(--error)", fontWeight: 600 }} title={item.calcError}>✗ Error</span>
+                          )}
+                          {item.calcStatus === "pending" && (
+                            <span style={{ fontSize: "0.7em", color: "var(--muted)" }}>...</span>
+                          )}
                         </div>
                       </td>
                       <td>
@@ -1209,20 +1679,27 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
 
           {/* Total with operator margin */}
           {(() => {
-            const totalBefore = quoteItems.reduce((sum, it) => sum + (it.subtotal || 0), 0);
-            const totalAfterMargin = totalBefore * (1 - operatorMargin / 100);
+            const hasCalcErrors = quoteItems.some((it) => it.calcStatus === "error");
+            const subtotalLines = quoteItems.reduce((sum, it) => sum + (it.subtotal || 0), 0);
+            const totalBefore = subtotalLines * (1 - operatorMargin / 100);  // aplica margen
+            const tax = Math.round(totalBefore * 0.19);
+            const totalAfterMargin = roundClpFront(totalBefore + tax);  // BUG-1: total con IVA
             return (
               <div style={{ marginTop: "1rem" }}>
                 <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
                   <div style={{ flex: 1 }}>
-                    <p className="status-note">
-                      <strong>Total: ${totalAfterMargin.toLocaleString()} CLP</strong>
-                      {operatorMargin > 0 && (
-                        <span style={{ fontSize: "0.85em", marginLeft: "0.5rem" }}>
-                          (antes: ${totalBefore.toLocaleString()})
-                        </span>
-                      )}
-                    </p>
+                    {hasCalcErrors ? (
+                      <p className="status-note" style={{ color: "var(--error)" }}>
+                        ⚠ Total bloqueado — corrige los ítems con error
+                      </p>
+                    ) : (
+                      <TotalsBlock
+                        subtotal={totalBefore}
+                        tax={tax}
+                        total={totalAfterMargin}
+                        marginActive={operatorMargin > 0}
+                      />
+                    )}
                   </div>
                   {/* SPEC-32: Operator margin field */}
                   <div style={{ width: "200px" }}>
@@ -1243,6 +1720,52 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
               </div>
             );
           })()}
+
+          {/* SPEC-35: Customer fields + Create Draft button */}
+          <div style={{ marginTop: "1rem", display: "flex", gap: "1rem", alignItems: "flex-end", flexWrap: "wrap" }}>
+            <label className="field" style={{ flex: 1, minWidth: "180px" }}>
+              <span>Cliente</span>
+              <Input
+                value={quoteCustomerName}
+                onChange={(e) => setQuoteCustomerName(e.target.value)}
+                placeholder="Nombre del cliente"
+              />
+            </label>
+            <label className="field" style={{ flex: 1, minWidth: "180px" }}>
+              <span>Referencia</span>
+              <Input
+                value={quoteCustomerReference}
+                onChange={(e) => setQuoteCustomerReference(e.target.value)}
+                placeholder="Obra / referencia"
+              />
+            </label>
+            <Button
+              variant="secondary"
+              onClick={() => void handlePreview("CUSTOMER")}
+              disabled={
+                loadingPreview ||
+                !selectedPriceListName ||
+                quoteItems.some((it) => it.calcStatus !== "ok") ||
+                quoteItems.every((it) => !it.calcStatus)
+              }
+              title="Vista previa para el cliente"
+            >
+              {loadingPreview ? <Spinner size="sm" /> : "Vista previa"}
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => void handleCreateDraftFromQuote()}
+              disabled={
+                loadingCreateDraft ||
+                !selectedPriceListName ||
+                quoteItems.some((it) => it.calcStatus !== "ok") ||
+                quoteItems.every((it) => !it.calcStatus)
+              }
+              title="Crea venta draft con todos los ítems calculados"
+            >
+              {loadingCreateDraft ? <Spinner size="sm" /> : "Crear Draft"}
+            </Button>
+          </div>
 
           <p className="status-note">{status}</p>
           {quotes.length > 0 ? (
@@ -1280,12 +1803,40 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
           </div>
           <div className="inline-actions">
             <Button variant="secondary" onClick={handleCreateSaleDraft} disabled={loadingMenu}>Crear Draft</Button>
-            <Button variant="secondary" onClick={handleAddSaleLine} disabled={!saleId || loadingMenu}>Agregar Linea</Button>
             <Button variant="secondary" onClick={handleUpdateSaleCustomer} disabled={!saleId || loadingMenu}>Actualizar Cliente</Button>
             <Button variant="secondary" onClick={handleListSales} disabled={loadingMenu}>
               {loadingMenu ? <Spinner size="sm" /> : "Refrescar"}
             </Button>
           </div>
+          {/* BUG-3: form para agregar línea a venta seleccionada */}
+          {saleId && (
+            <div className="form-row" style={{ marginTop: "0.5rem", flexWrap: "wrap", gap: "0.5rem", alignItems: "flex-end" }}>
+              <div className="form-field" style={{ minWidth: "150px", flex: 2 }}>
+                <label style={{ fontSize: "0.85em" }}>SKU</label>
+                <Select value={newLineSkuCode} onChange={(e) => setNewLineSkuCode(e.target.value)}>
+                  <option value="">— Seleccionar SKU —</option>
+                  {skuOptions.map((s) => (
+                    <option key={s.code} value={s.code}>{s.code} — {s.name}</option>
+                  ))}
+                </Select>
+              </div>
+              <div className="form-field" style={{ width: "80px" }}>
+                <label style={{ fontSize: "0.85em" }}>Ancho (m)</label>
+                <Input value={newLineWidth} onChange={(e) => setNewLineWidth(e.target.value)} />
+              </div>
+              <div className="form-field" style={{ width: "80px" }}>
+                <label style={{ fontSize: "0.85em" }}>Alto (m)</label>
+                <Input value={newLineHeight} onChange={(e) => setNewLineHeight(e.target.value)} />
+              </div>
+              <div className="form-field" style={{ width: "60px" }}>
+                <label style={{ fontSize: "0.85em" }}>Cant.</label>
+                <Input value={newLineQty} onChange={(e) => setNewLineQty(e.target.value)} />
+              </div>
+              <Button variant="secondary" onClick={() => void handleAddSaleLine()} disabled={loadingMenu}>
+                + Agregar línea
+              </Button>
+            </div>
+          )}
           {loadingMenu && sales.length === 0 ? (
             <TableSkeleton rows={4} cols={6} />
           ) : sales.length > 0 ? (
@@ -1296,7 +1847,11 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                 </thead>
                 <tbody>
                   {sales.map((row) => (
-                    <tr key={row.id} style={{ cursor: "pointer" }} onClick={() => setSaleId(row.id)}>
+                    <tr
+                      key={row.id}
+                      style={{ cursor: "pointer", background: row.id === highlightedSaleId ? "var(--ok-bg, #d4edda)" : undefined }}
+                      onClick={() => { setSaleId(row.id); setHighlightedSaleId(null); }}
+                    >
                       <td>{row.quoteCode ?? "—"}{row.id === saleId ? " ◀" : ""}</td>
                       <td>{row.customerName ?? "—"}</td>
                       <td>{getStatusLabel(statusLabels, "sale", row.status)}</td>
@@ -1318,6 +1873,17 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                               disabled={loadingActionId === row.id}
                             >
                               {loadingActionId === row.id ? <Spinner size="sm" /> : "Anular"}
+                            </Button>
+                          </div>
+                        ) : row.status === "CONFIRMED" ? (
+                          <div className="inline-actions" onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              variant="secondary"
+                              onClick={() => void handlePrintSaleLabels(row.id)}
+                              disabled={loadingActionId === row.id}
+                              title="Imprimir etiquetas de todos los cortes"
+                            >
+                              {loadingActionId === row.id ? <Spinner size="sm" /> : "🖨️ Etiquetas"}
                             </Button>
                           </div>
                         ) : (
@@ -1369,6 +1935,35 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                         ))}
                       </tbody>
                     </table>
+
+                    {/* SPEC-36: Totals + payment block */}
+                    <div style={{ marginTop: "1rem", display: "flex", gap: "2rem", flexWrap: "wrap", alignItems: "flex-start" }}>
+                      <TotalsBlock
+                        subtotal={selectedSale.subtotalAmount}
+                        tax={selectedSale.taxAmount}
+                        total={selectedSale.totalAmount}
+                        amountPaid={selectedSale.amountPaid}
+                        balanceDue={selectedSale.balanceDue}
+                      />
+                      {selectedSale.status === "DRAFT" && (
+                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end" }}>
+                          <label className="field" style={{ margin: 0 }}>
+                            <span>Registrar abono</span>
+                            <Input
+                              type="number"
+                              value={amountPaidInput}
+                              onChange={(e) => setAmountPaidInput(e.target.value)}
+                              placeholder="0"
+                              min="0"
+                              style={{ width: "140px" }}
+                            />
+                          </label>
+                          <Button variant="secondary" onClick={() => void handleUpdatePaymentSummary()}>
+                            Guardar
+                          </Button>
+                        </div>
+                      )}
+                    </div>
 
                     {activeLine && activeLine.id && sales.find((s) => s.id === activeSaleIdForAlloc)?.lines.some((l) => l.id === activeLine.id) ? (
                       <div style={{ marginTop: "0.75rem" }}>
@@ -1492,17 +2087,47 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
             <Button variant="secondary" onClick={handleListScraps} disabled={loadingMenu}>
               {loadingMenu ? <Spinner size="sm" /> : "Refrescar"}
             </Button>
+            {/* SPEC-25: bulk print selected scraps */}
+            <Button
+              variant="primary"
+              onClick={() => void handlePrintScrapLabels()}
+              disabled={selectedScrapIds.length === 0 || loadingMenu}
+            >
+              {loadingMenu ? <Spinner size="sm" /> : `🖨️ Imprimir seleccionados (${selectedScrapIds.length})`}
+            </Button>
           </div>
           {loadingMenu && scraps.length === 0 ? (
-            <TableSkeleton rows={4} cols={7} />
+            <TableSkeleton rows={4} cols={8} />
           ) : scraps.length > 0 ? (
             <table className="data-table">
               <thead>
-                <tr><th>ID</th><th>Estado</th><th>Area m²</th><th>Medida</th><th>SKU</th><th>Ubicacion</th><th>Accion</th></tr>
+                <tr>
+                  <th>
+                    <input
+                      type="checkbox"
+                      title="Seleccionar todos los STORED"
+                      checked={scraps.filter((s) => s.status === "STORED").length > 0 && scraps.filter((s) => s.status === "STORED").every((s) => selectedScrapIds.includes(s.id))}
+                      onChange={(e) => {
+                        const storedIds = scraps.filter((s) => s.status === "STORED").map((s) => s.id);
+                        setSelectedScrapIds(e.target.checked ? storedIds : []);
+                      }}
+                    />
+                  </th>
+                  <th>ID</th><th>Estado</th><th>Area m²</th><th>Medida</th><th>SKU</th><th>Ubicacion</th><th>Accion</th>
+                </tr>
               </thead>
               <tbody>
                 {scraps.map((row) => (
                   <tr key={row.id}>
+                    <td>
+                      {row.status === "STORED" && (
+                        <input
+                          type="checkbox"
+                          checked={selectedScrapIds.includes(row.id)}
+                          onChange={() => toggleScrapSelection(row.id)}
+                        />
+                      )}
+                    </td>
                     <td>{row.id.slice(0, 8)}</td>
                     <td>{getStatusLabel(statusLabels, "scrap", row.status)}</td>
                     <td>{row.areaM2}</td>
@@ -1614,17 +2239,42 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
             <Button variant="secondary" onClick={() => void handleListLabels()} disabled={loadingMenu}>
               {loadingMenu ? <Spinner size="sm" /> : "Refrescar"}
             </Button>
+            {/* SPEC-25: print selected labels */}
+            <Button
+              variant="primary"
+              onClick={() => void handlePrintSelectedLabels()}
+              disabled={selectedLabelIds.length === 0}
+            >
+              {`🖨️ Imprimir seleccionadas (${selectedLabelIds.length})`}
+            </Button>
           </div>
           {loadingMenu && labelList.length === 0 ? (
-            <TableSkeleton rows={4} cols={6} />
+            <TableSkeleton rows={4} cols={7} />
           ) : labelList.length > 0 ? (
             <table className="data-table">
               <thead>
-                <tr><th>ID</th><th>Tipo</th><th>Linea/Retazo/Cotiz.</th><th>Creado</th><th>Ultimo print</th><th>Acciones</th></tr>
+                <tr>
+                  <th>
+                    <input
+                      type="checkbox"
+                      title="Seleccionar todas"
+                      checked={labelList.length > 0 && labelList.every((l) => selectedLabelIds.includes(l.id))}
+                      onChange={(e) => setSelectedLabelIds(e.target.checked ? labelList.map((l) => l.id) : [])}
+                    />
+                  </th>
+                  <th>ID</th><th>Tipo</th><th>Linea/Retazo/Cotiz.</th><th>Creado</th><th>Ultimo print</th><th>Acciones</th>
+                </tr>
               </thead>
               <tbody>
                 {labelList.map((l) => (
                   <tr key={l.id}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selectedLabelIds.includes(l.id)}
+                        onChange={() => toggleLabelSelection(l.id)}
+                      />
+                    </td>
                     <td>{l.id.slice(0, 8)}</td>
                     <td>{l.type}</td>
                     <td>{(l.saleLineId ?? l.scrapId ?? l.quoteId ?? "—")?.slice(0, 8)}</td>
@@ -1632,20 +2282,21 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                     <td>{l.lastPrintedAt ? formatLocalDateTime(l.lastPrintedAt) : "—"}</td>
                     <td>
                       <div className="inline-actions">
-                        <a
-                          className="link-btn"
-                          href={`${apiUrl}/labels/${l.id}/pdf?accessToken=${encodeURIComponent(accessToken)}`}
-                          target="_blank"
-                          rel="noreferrer"
+                        <Button
+                          variant="secondary"
+                          onClick={() => setLabelPreview({ id: l.id, url: `${apiUrl}/labels/${l.id}/pdf?accessToken=${encodeURIComponent(accessToken)}` })}
+                          title="Ver la etiqueta antes de imprimir"
+                          style={{ padding: "0.2rem 0.5rem", fontSize: "0.82em" }}
                         >
-                          Ver
-                        </a>
+                          Vista previa
+                        </Button>
                         <Button
                           variant="secondary"
                           onClick={() => void handleReprintById(l.id)}
                           disabled={loadingActionId === l.id}
+                          title="Registra reimpresión y abre el diálogo de impresión"
                         >
-                          {loadingActionId === l.id ? <Spinner size="sm" /> : "Reimprimir"}
+                          {loadingActionId === l.id ? <Spinner size="sm" /> : "Imprimir"}
                         </Button>
                       </div>
                     </td>
@@ -1722,7 +2373,12 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
               <thead><tr><th>Entidad</th><th>Accion</th><th>Actor</th><th>Fecha</th></tr></thead>
               <tbody>
                 {auditEvents.map((row) => (
-                  <tr key={row.id}><td>{row.entityType}:{row.entityId.slice(0, 8)}</td><td>{row.action}</td><td>{row.actor.email}</td><td>{formatLocalDateTime(row.createdAt)}</td></tr>
+                  <tr key={row.id}>
+                    <td>{ENTITY_TYPE_LABELS[row.entityType] ?? row.entityType}: {row.entityId.slice(0, 8).toUpperCase()}</td>
+                    <td>{AUDIT_ACTION_LABELS[row.action] ?? row.action}</td>
+                    <td>{row.actor.email}</td>
+                    <td>{formatLocalDateTime(row.createdAt)}</td>
+                  </tr>
                 ))}
               </tbody>
             </table>
@@ -1818,6 +2474,128 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
           <Button variant="secondary" onClick={() => setActiveModal(null)} disabled={loadingModal}>Cancelar</Button>
         </div>
       </Dialog>
+
+      {/* BUG-6: Label preview modal */}
+      <Dialog open={!!labelPreview} onClose={() => setLabelPreview(null)} title="Vista previa de etiqueta">
+        {labelPreview && (
+          <>
+            <iframe
+              src={labelPreview.url}
+              style={{ width: "100%", height: "520px", border: "none", display: "block" }}
+              title="Vista previa etiqueta"
+            />
+            <div style={{ padding: "0.75rem 1rem", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+              <Button
+                variant="primary"
+                onClick={() => { void handleReprintById(labelPreview.id); setLabelPreview(null); }}
+                disabled={loadingActionId === labelPreview.id}
+              >
+                {loadingActionId === labelPreview.id ? <Spinner size="sm" /> : "Imprimir"}
+              </Button>
+              <Button variant="secondary" onClick={() => setLabelPreview(null)}>Cerrar</Button>
+            </div>
+          </>
+        )}
+      </Dialog>
+
+      {/* SPEC-38: Preview dialog */}
+      <Dialog open={previewOpen} onClose={() => setPreviewOpen(false)} title="Vista previa de cotización">
+        <div className="dialog-header">
+          <span className="dialog-title">Vista previa — {previewMode === "CUSTOMER" ? "Cliente" : "Interna"}</span>
+          <button className="dialog-close" onClick={() => setPreviewOpen(false)}>✕</button>
+        </div>
+        <div className="dialog-body">
+          {previewData && (
+            <div id="quote-preview-printable" style={{ fontFamily: "sans-serif", fontSize: "0.9em", lineHeight: "1.6" }}>
+              {/* Header */}
+              <div style={{ marginBottom: "1rem", borderBottom: "2px solid #333", paddingBottom: "0.5rem" }}>
+                <div style={{ fontWeight: 700, fontSize: "1.1em" }}>{previewData.header.branchName}</div>
+                <div style={{ color: "var(--muted)", fontSize: "0.85em" }}>
+                  {new Date(previewData.header.date).toLocaleDateString("es-CL", { day: "2-digit", month: "long", year: "numeric" })}
+                  {" · "}Lista: {previewData.header.priceListName}
+                </div>
+              </div>
+
+              {/* Customer */}
+              {(previewData.customer.name || previewData.customer.reference) && (
+                <div style={{ marginBottom: "0.75rem", fontSize: "0.88em" }}>
+                  {previewData.customer.name && <div>Cliente: <strong>{previewData.customer.name}</strong></div>}
+                  {previewData.customer.reference && <div>Referencia: <strong>{previewData.customer.reference}</strong></div>}
+                </div>
+              )}
+
+              {/* Lines */}
+              <table className="data-table" style={{ fontSize: "0.85em", marginBottom: "0.75rem" }}>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Descripción</th>
+                    {previewMode === "INTERNAL" && <th>SKU</th>}
+                    <th>Medida (m)</th>
+                    <th>Cant.</th>
+                    <th>P. unit.</th>
+                    <th>Subtotal</th>
+                    {previewMode === "INTERNAL" && <th>Método</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewData.lines.map((l) => (
+                    <tr key={l.index}>
+                      <td>{l.index + 1}</td>
+                      <td>
+                        {l.description}
+                        {l.categoryName && <span style={{ color: "var(--muted)", fontSize: "0.85em" }}> [{l.categoryName}]</span>}
+                        {l.error && <span style={{ color: "var(--error, red)" }}> ⚠ {l.error}</span>}
+                      </td>
+                      {previewMode === "INTERNAL" && <td style={{ fontSize: "0.82em" }}>{l.skuCode}</td>}
+                      <td>{l.requestedWidthM} × {l.requestedHeightM}</td>
+                      <td>{l.quantity}</td>
+                      <td>${(l.unitPrice ?? 0).toLocaleString()}</td>
+                      <td>${(l.subtotal ?? 0).toLocaleString()}</td>
+                      {previewMode === "INTERNAL" && (
+                        <td style={{ fontSize: "0.8em", color: "var(--muted)" }}>
+                          {l.priceMethod === "TABLE_LOOKUP" ? "Tabla" : `${(l.linearMeters ?? 0).toFixed(2)} m`}
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* Totals */}
+              <div style={{ textAlign: "right", fontSize: "0.9em", lineHeight: "1.8" }}>
+                <div>Subtotal: <strong>${previewData.totals.subtotal.toLocaleString()}</strong></div>
+                <div>IVA (19%): <strong>${Math.round(previewData.totals.tax).toLocaleString()}</strong></div>
+                <div style={{ fontSize: "1.05em", fontWeight: 700 }}>
+                  Total: ${Math.round(previewData.totals.total).toLocaleString()} {previewData.totals.currencyCode}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <Button variant="primary" onClick={() => window.print()}>Imprimir</Button>
+                {previewMode === "CUSTOMER" && (
+                  <Button variant="secondary" onClick={() => void handlePreview("INTERNAL")}>
+                    Ver vista interna
+                  </Button>
+                )}
+                {previewMode === "INTERNAL" && (
+                  <Button variant="secondary" onClick={() => void handlePreview("CUSTOMER")}>
+                    Ver vista cliente
+                  </Button>
+                )}
+                <Button variant="secondary" onClick={() => setPreviewOpen(false)}>Cerrar</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </Dialog>
     </section>
   );
+}
+
+function roundClpFront(v: number) {
+  const int = Math.round(v);
+  const rem = int % 10;
+  return rem <= 5 ? int - rem : int - rem + 10;
 }

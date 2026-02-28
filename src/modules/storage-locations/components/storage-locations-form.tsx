@@ -105,8 +105,8 @@ export function StorageLocationsForm({ accessToken, apiUrl, currentUserRole }: S
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (res.ok) {
-        const data = await res.json();
-        setLocations(data);
+        const data = await res.json() as { data?: StorageLocation[] } | StorageLocation[];
+        setLocations(Array.isArray(data) ? data : (data.data ?? []));
       } else {
         setErrorMsg("Error al cargar ubicaciones");
       }

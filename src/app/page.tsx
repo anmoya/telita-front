@@ -10,6 +10,7 @@ import { CatalogForm } from "../modules/catalog/components/catalog-form";
 import { PriceListForm } from "../modules/pricing/components/price-list-form";
 import { StorageLocationsForm } from "../modules/storage-locations/components/storage-locations-form";
 import { QuoteItemCategoriesForm } from "../modules/quote-item-categories/components/quote-item-categories-form";
+import { QuoteBatchesForm } from "../modules/quote-batches/components/quote-batches-form";
 
 type MenuKey =
   | "dashboard"
@@ -25,7 +26,8 @@ type MenuKey =
   | "perfil"
   | "listas-precios"
   | "ubicaciones"
-  | "categorias-cotizacion";
+  | "categorias-cotizacion"
+  | "historial-cotizaciones";
 
 type TokenInfo = {
   sub: string;
@@ -46,6 +48,7 @@ const ALL_MENU_ITEMS: Array<{ key: MenuKey; label: string; roles?: Array<"supera
   { key: "listas-precios", label: "Listas Precios", roles: ["superadmin", "admin"] },
   { key: "ubicaciones", label: "Ubicaciones", roles: ["superadmin", "admin"] },
   { key: "categorias-cotizacion", label: "Cat. Cotizacion", roles: ["superadmin", "admin"] },
+  { key: "historial-cotizaciones", label: "Historial Cotiz." },
   { key: "usuarios", label: "Usuarios", roles: ["superadmin", "admin"] },
   { key: "perfil", label: "Mi perfil" }
 ];
@@ -170,7 +173,14 @@ export default function HomePage() {
             currentUserRole={tokenInfo.role}
           />
         )}
-        {activeMenu !== "catalogo" && activeMenu !== "usuarios" && activeMenu !== "perfil" && activeMenu !== "listas-precios" && activeMenu !== "ubicaciones" && activeMenu !== "categorias-cotizacion" && (
+        {activeMenu === "historial-cotizaciones" && tokenInfo && (
+          <QuoteBatchesForm
+            accessToken={accessToken}
+            apiUrl={apiUrl}
+            onNavigate={setActiveMenu}
+          />
+        )}
+        {activeMenu !== "catalogo" && activeMenu !== "usuarios" && activeMenu !== "perfil" && activeMenu !== "listas-precios" && activeMenu !== "ubicaciones" && activeMenu !== "categorias-cotizacion" && activeMenu !== "historial-cotizaciones" && (
           <QuoteForm accessToken={accessToken} activeMenu={activeMenu} onNavigate={setActiveMenu} />
         )}
       </section>

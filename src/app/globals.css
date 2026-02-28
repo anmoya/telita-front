@@ -91,7 +91,9 @@ body {
 .app-content-2026 {
   min-width: 0;
   display: grid;
+  grid-template-rows: auto 1fr;
   gap: 0.9rem;
+  align-items: start;
 }
 
 .brand-block {
@@ -203,11 +205,13 @@ body {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 0.75rem 1rem;
+  padding: 0 1rem;
   display: flex;
   justify-content: space-between;
   gap: 0.8rem;
   align-items: center;
+  height: 64px;       /* BUG-10: altura fija, nunca crece */
+  align-self: start;  /* no se estira en el grid */
 }
 
 .topbar-kicker {
@@ -220,8 +224,11 @@ body {
 }
 
 .topbar-title {
-  margin: 0.3rem 0 0;
+  margin: 0.2rem 0 0;
   font-size: 1.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .topbar-user {
@@ -792,4 +799,28 @@ body {
 @keyframes t-pulse {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.35; }
+}
+
+/* ── Print (spec-38 quote preview) ───────────────────── */
+@media print {
+  .app-sidebar-2026,
+  .topbar-2026,
+  .dialog-header,
+  .dialog-close,
+  button {
+    display: none !important;
+  }
+  .dialog-overlay {
+    position: static !important;
+    background: none !important;
+  }
+  .dialog-panel {
+    box-shadow: none !important;
+    border: none !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+  #quote-preview-printable {
+    padding: 1rem;
+  }
 }

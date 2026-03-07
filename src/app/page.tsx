@@ -11,6 +11,7 @@ import { PriceListForm } from "../modules/pricing/components/price-list-form";
 import { StorageLocationsForm } from "../modules/storage-locations/components/storage-locations-form";
 import { QuoteItemCategoriesForm } from "../modules/quote-item-categories/components/quote-item-categories-form";
 import { QuoteBatchesForm } from "../modules/quote-batches/components/quote-batches-form";
+import { CustomersForm } from "../modules/customers/components/customers-form";
 import { WelcomeModal } from "../modules/onboarding/components/welcome-modal";
 import { startTour } from "../modules/onboarding/components/onboarding-tour";
 
@@ -29,7 +30,8 @@ type MenuKey =
   | "listas-precios"
   | "ubicaciones"
   | "categorias-cotizacion"
-  | "historial-cotizaciones";
+  | "historial-cotizaciones"
+  | "clientes";
 
 type TokenInfo = {
   sub: string;
@@ -51,6 +53,7 @@ const ALL_MENU_ITEMS: Array<{ key: MenuKey; label: string; roles?: Array<"supera
   { key: "ubicaciones", label: "Ubicaciones", roles: ["superadmin", "admin"] },
   { key: "categorias-cotizacion", label: "Cat. Cotizacion", roles: ["superadmin", "admin"] },
   { key: "historial-cotizaciones", label: "Historial Cotiz." },
+  { key: "clientes", label: "Clientes", roles: ["superadmin", "admin"] },
   { key: "usuarios", label: "Usuarios", roles: ["superadmin", "admin"] },
   { key: "perfil", label: "Mi perfil" }
 ];
@@ -224,7 +227,14 @@ export default function HomePage() {
             onNavigate={setActiveMenu}
           />
         )}
-        {activeMenu !== "catalogo" && activeMenu !== "usuarios" && activeMenu !== "perfil" && activeMenu !== "listas-precios" && activeMenu !== "ubicaciones" && activeMenu !== "categorias-cotizacion" && activeMenu !== "historial-cotizaciones" && (
+        {activeMenu === "clientes" && tokenInfo && (
+          <CustomersForm
+            accessToken={accessToken}
+            apiUrl={apiUrl}
+            currentUserRole={tokenInfo.role}
+          />
+        )}
+        {activeMenu !== "catalogo" && activeMenu !== "usuarios" && activeMenu !== "perfil" && activeMenu !== "listas-precios" && activeMenu !== "ubicaciones" && activeMenu !== "categorias-cotizacion" && activeMenu !== "historial-cotizaciones" && activeMenu !== "clientes" && (
           <QuoteForm accessToken={accessToken} activeMenu={activeMenu} onNavigate={setActiveMenu} />
         )}
       </section>

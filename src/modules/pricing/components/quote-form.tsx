@@ -37,6 +37,7 @@ type QuoteItem = {
   categoryId?: string;
   categoryName?: string;
   lineNote?: string;
+  roomAreaName?: string;
 };
 
 type QuoteItemCategory = {
@@ -89,12 +90,23 @@ type SaleLineRow = {
   requestedWidthM: number;
   requestedHeightM: number;
   unitPrice: number;
+  lineSubtotal: number;
   lineTotal: number;
+  discountPct: number;
   allocatedScrapId: string | null;
   categoryId: string | null;
   categoryName: string | null;
   displayOrder: number;
   lineNote: string | null;
+  roomAreaName: string | null;
+  pieces: Array<{
+    id: string;
+    pieceIndex: number;
+    pieceTotal: number;
+    requestedWidthM: number;
+    requestedHeightM: number;
+    roomAreaName: string | null;
+  }>;
 };
 
 type ScrapMatchRow = {
@@ -112,14 +124,43 @@ type SaleRow = {
   status: string;
   quoteCode: string | null;
   quoteNumber: number | null;
+  customerId: string | null;
   customerName: string | null;
   customerReference: string | null;
+  customer: {
+    id: string;
+    code: string;
+    fullName: string;
+    phone: string | null;
+    email: string | null;
+    companyOrReference: string | null;
+    discountCode: string | null;
+  } | null;
+  manualDiscountPct: number;
+  manualDiscountReason: string | null;
+  discountSource: string;
+  discountCodeApplied: string | null;
+  discountPctApplied: number;
   subtotalAmount: number;
   taxAmount: number;
   totalAmount: number;
   amountPaid: number;
   balanceDue: number;
   lines: SaleLineRow[];
+};
+
+type CustomerOption = {
+  id: string;
+  code: string;
+  fullName: string;
+  phone: string | null;
+  email: string | null;
+  companyOrReference: string | null;
+  preferredPriceListName: string | null;
+  discountCode: string | null;
+  discountPct: number;
+  notes: string | null;
+  isActive: boolean;
 };
 
 type ScrapRow = {
@@ -158,7 +199,11 @@ type PendingScrapRow = {
 type BatchLabelResult = {
   labelId: string;
   saleLineId: string;
+  saleLinePieceId: string;
   skuCode: string;
+  pieceIndex: number;
+  pieceTotal: number;
+  roomAreaName: string | null;
   printEventId: string;
 };
 
@@ -290,6 +335,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   // SPEC-35: customer fields in cotizador + create draft state
   const [quoteCustomerName, setQuoteCustomerName] = useState("");
   const [quoteCustomerReference, setQuoteCustomerReference] = useState("");
+  const [quoteCustomerId, setQuoteCustomerId] = useState("");
+  const [quoteManualDiscountPct, setQuoteManualDiscountPct] = useState("0");
+  const [quoteManualDiscountReason, setQuoteManualDiscountReason] = useState("");
   const [loadingCreateDraft, setLoadingCreateDraft] = useState(false);
   const [highlightedSaleId, setHighlightedSaleId] = useState<string | null>(null);
 
@@ -301,6 +349,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   const [newLineWidth, setNewLineWidth] = useState("2.0");
   const [newLineHeight, setNewLineHeight] = useState("2.0");
   const [newLineQty, setNewLineQty] = useState("1");
+  const [newLineRoomAreaName, setNewLineRoomAreaName] = useState("");
 
   // SPEC-38: Preview
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -321,6 +370,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   const [amountPaidInput, setAmountPaidInput] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerReference, setCustomerReference] = useState("");
+  const [customerId, setCustomerId] = useState("");
+  const [saleManualDiscountPct, setSaleManualDiscountPct] = useState("0");
+  const [saleManualDiscountReason, setSaleManualDiscountReason] = useState("");
   const [scrapId, setScrapId] = useState("");
   const [labelId, setLabelId] = useState("");
   const [cutFilterStatus, setCutFilterStatus] = useState<CutJobStatus | "ALL">("PENDING");
@@ -348,6 +400,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
 
   const [quotes, setQuotes] = useState<QuoteRow[]>([]);
   const [sales, setSales] = useState<SaleRow[]>([]);
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [scraps, setScraps] = useState<ScrapRow[]>([]);
   const [cutJobs, setCutJobs] = useState<CutJobRow[]>([]);
 
@@ -379,6 +432,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     void loadStatusLabels();
     void loadSelectorsData();
     void loadCategories();
+    void loadCustomers();
   }, []);
 
   // SPEC-32: Multi-item helpers
@@ -502,13 +556,17 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
         body: JSON.stringify({
           branchCode: "MAIN",
           priceListName: selectedPriceListName,
+          customerId: quoteCustomerId || undefined,
           customerName: quoteCustomerName || undefined,
           customerReference: quoteCustomerReference || undefined,
+          manualDiscountPct: Number(quoteManualDiscountPct || 0) || undefined,
+          manualDiscountReason: quoteManualDiscountReason || undefined,
           items: quoteItems.map((it, idx) => ({
             skuCode: it.skuCode ?? "",
             requestedWidthM: Number(it.widthM),
             requestedHeightM: Number(it.heightM),
             quantity: Number(it.quantity),
+            roomAreaName: it.roomAreaName || undefined,
             categoryId: it.categoryId || undefined,
             categoryName: !it.categoryId && it.categoryName ? it.categoryName : undefined,
             lineNote: it.lineNote || undefined,
@@ -540,6 +598,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
         body: JSON.stringify({
           branchCode: "MAIN",
           priceListName: selectedPriceListName,
+          customerId: quoteCustomerId || undefined,
           customerName: quoteCustomerName || undefined,
           customerReference: quoteCustomerReference || undefined,
           lines: quoteItems.map((it, idx) => ({
@@ -550,6 +609,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
             unitPrice: it.unitPrice ?? 0,
             lineSubtotal: it.subtotal ?? 0,
             priceMethod: it.priceMethod ?? "LINEAR_METER",
+            roomAreaName: it.roomAreaName || undefined,
             categoryId: it.categoryId || undefined,
             categoryName: !it.categoryId && it.categoryName ? it.categoryName : undefined,
             lineNote: it.lineNote || undefined,
@@ -561,6 +621,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
       setQuoteItems([{ id: crypto.randomUUID(), widthM: "1", heightM: "1", quantity: "1" }]);
       setQuoteCustomerName("");
       setQuoteCustomerReference("");
+      setQuoteCustomerId("");
+      setQuoteManualDiscountPct("0");
+      setQuoteManualDiscountReason("");
       setStatus("");
       setHighlightedSaleId(data.saleId ?? null);
       // Load fresh sales list then navigate
@@ -627,6 +690,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
         body: JSON.stringify({
           branchCode: "MAIN",
           priceListName: selectedPriceListName,
+          customerId: quoteCustomerId || undefined,
           customerName: quoteCustomerName || undefined,
           customerReference: quoteCustomerReference || undefined,
           lines: quoteItems.map((it, idx) => ({
@@ -637,6 +701,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
             unitPrice: it.unitPrice ?? 0,
             lineSubtotal: it.subtotal ?? 0,
             priceMethod: it.priceMethod ?? "LINEAR_METER",
+            roomAreaName: it.roomAreaName || undefined,
             categoryId: it.categoryId || undefined,
             categoryName: !it.categoryId && it.categoryName ? it.categoryName : undefined,
             lineNote: it.lineNote || undefined,
@@ -772,6 +837,44 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     } finally {
       setLoadingSelectors(false);
     }
+  }
+
+  async function loadCustomers() {
+    try {
+      const response = await authedFetch(`${apiUrl}/customers?branchCode=MAIN&isActive=true`);
+      if (!response.ok) return;
+      const data = await response.json() as CustomerOption[];
+      setCustomers(Array.isArray(data) ? data : []);
+    } catch {
+      // non-blocking
+    }
+  }
+
+  function applyQuoteCustomerSelection(selectedId: string) {
+    setQuoteCustomerId(selectedId);
+    const selected = customers.find((customer) => customer.id === selectedId);
+    if (!selected) {
+      setQuoteCustomerName("");
+      setQuoteCustomerReference("");
+      return;
+    }
+    setQuoteCustomerName(selected.fullName);
+    setQuoteCustomerReference(selected.companyOrReference ?? "");
+    if (!selectedPriceListName && selected.preferredPriceListName) {
+      setSelectedPriceListName(selected.preferredPriceListName);
+    }
+  }
+
+  function applySaleCustomerSelection(selectedId: string) {
+    setCustomerId(selectedId);
+    const selected = customers.find((customer) => customer.id === selectedId);
+    if (!selected) {
+      setCustomerName("");
+      setCustomerReference("");
+      return;
+    }
+    setCustomerName(selected.fullName);
+    setCustomerReference(selected.companyOrReference ?? "");
   }
 
   async function loadStatusLabels() {
@@ -1195,8 +1298,8 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
       setSalesStatus("Selecciona una lista de precios");
       return;
     }
-    if (!customerName.trim()) {
-      setSalesStatus("Ingresa el nombre del cliente");
+    if (!customerId) {
+      setSalesStatus("Selecciona un cliente");
       return;
     }
     setSalesStatus("Creando venta...");
@@ -1205,8 +1308,11 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
       body: JSON.stringify({
         branchCode: "MAIN",
         priceListName: selectedPriceListName,
+        customerId,
         customerName: customerName,
-        customerReference: customerReference || null
+        customerReference: customerReference || null,
+        manualDiscountPct: Number(saleManualDiscountPct || 0) || undefined,
+        manualDiscountReason: saleManualDiscountReason || undefined
       })
     });
     const data = await response.json();
@@ -1214,6 +1320,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     setSalesStatus(`Venta draft creada: ${data.quoteCode ?? "error"}`);
     setCustomerName("");
     setCustomerReference("");
+    setCustomerId("");
+    setSaleManualDiscountPct("0");
+    setSaleManualDiscountReason("");
     await handleListSales();
   }
 
@@ -1223,8 +1332,11 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     const response = await authedFetch(`${apiUrl}/sales/${saleId}`, {
       method: "PATCH",
       body: JSON.stringify({
+        customerId: customerId || null,
         customerName: customerName || null,
-        customerReference: customerReference || null
+        customerReference: customerReference || null,
+        manualDiscountPct: Number(saleManualDiscountPct || 0),
+        manualDiscountReason: saleManualDiscountReason || null
       })
     });
     if (!response.ok) {
@@ -1235,6 +1347,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     setSalesStatus("Cliente actualizado.");
     setCustomerName("");
     setCustomerReference("");
+    setCustomerId("");
+    setSaleManualDiscountPct("0");
+    setSaleManualDiscountReason("");
     await handleListSales();
   }
 
@@ -1267,7 +1382,8 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
         skuCode: newLineSkuCode,
         requestedWidthM: Number(newLineWidth),
         requestedHeightM: Number(newLineHeight),
-        quantity: Number(newLineQty)
+        quantity: Number(newLineQty),
+        roomAreaName: newLineRoomAreaName || undefined
       })
     });
     if (!res.ok) {
@@ -1277,6 +1393,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     }
     setSalesStatus("Línea agregada.");
     setNewLineSkuCode("");
+    setNewLineRoomAreaName("");
     await handleListSales();
   }
 
@@ -1498,6 +1615,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                     <th>Alto (m)</th>
                     <th>Cantidad</th>
                     <th>Categoria</th>
+                    <th>Ambiente</th>
                     <th>Nota</th>
                     <th>Precio unit.</th>
                     <th>Subtotal</th>
@@ -1642,6 +1760,15 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                       <td>
                         <Input
                           type="text"
+                          value={item.roomAreaName || ""}
+                          onChange={(e) => updateQuoteItem(item.id, { roomAreaName: e.target.value })}
+                          placeholder="Living, comedor..."
+                          style={{ width: "120px", fontSize: "0.8em" }}
+                        />
+                      </td>
+                      <td>
+                        <Input
+                          type="text"
                           value={item.lineNote || ""}
                           onChange={(e) => updateQuoteItem(item.id, { lineNote: e.target.value })}
                           placeholder="Nota..."
@@ -1723,6 +1850,17 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
 
           {/* SPEC-35: Customer fields + Create Draft button */}
           <div style={{ marginTop: "1rem", display: "flex", gap: "1rem", alignItems: "flex-end", flexWrap: "wrap" }}>
+            <label className="field" style={{ flex: 1, minWidth: "220px" }}>
+              <span>Cliente del maestro</span>
+              <Select value={quoteCustomerId} onChange={(e) => applyQuoteCustomerSelection(e.target.value)}>
+                <option value="">Seleccionar cliente</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.code} - {customer.fullName}
+                  </option>
+                ))}
+              </Select>
+            </label>
             <label className="field" style={{ flex: 1, minWidth: "180px" }}>
               <span>Cliente</span>
               <Input
@@ -1737,6 +1875,25 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                 value={quoteCustomerReference}
                 onChange={(e) => setQuoteCustomerReference(e.target.value)}
                 placeholder="Obra / referencia"
+              />
+            </label>
+            <label className="field" style={{ width: "120px" }}>
+              <span>Desc. manual %</span>
+              <Input
+                type="number"
+                value={quoteManualDiscountPct}
+                onChange={(e) => setQuoteManualDiscountPct(e.target.value)}
+                min="0"
+                max="100"
+                step="0.1"
+              />
+            </label>
+            <label className="field" style={{ flex: 1, minWidth: "180px" }}>
+              <span>Motivo desc.</span>
+              <Input
+                value={quoteManualDiscountReason}
+                onChange={(e) => setQuoteManualDiscountReason(e.target.value)}
+                placeholder="Opcional"
               />
             </label>
             <Button
@@ -1785,6 +1942,17 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
           <p className="status-note">SaleId activo: {saleId ? saleId.slice(0, 8) : "ninguno — click en una fila para seleccionar"}</p>
           <div className="form-row" style={{ marginBottom: "0.5rem" }}>
             <div className="form-field" style={{ flex: 1 }}>
+              <label style={{ fontSize: "0.85em" }}>Cliente del maestro</label>
+              <Select value={customerId} onChange={(e) => applySaleCustomerSelection(e.target.value)}>
+                <option value="">Seleccionar cliente</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.code} - {customer.fullName}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="form-field" style={{ flex: 1 }}>
               <label style={{ fontSize: "0.85em" }}>Cliente</label>
               <Input
                 value={customerName}
@@ -1798,6 +1966,25 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                 value={customerReference}
                 onChange={(e) => setCustomerReference(e.target.value)}
                 placeholder="Referencia (opcional)"
+              />
+            </div>
+            <div className="form-field" style={{ width: "120px" }}>
+              <label style={{ fontSize: "0.85em" }}>Desc. manual %</label>
+              <Input
+                type="number"
+                value={saleManualDiscountPct}
+                onChange={(e) => setSaleManualDiscountPct(e.target.value)}
+                min="0"
+                max="100"
+                step="0.1"
+              />
+            </div>
+            <div className="form-field" style={{ flex: 1 }}>
+              <label style={{ fontSize: "0.85em" }}>Motivo desc.</label>
+              <Input
+                value={saleManualDiscountReason}
+                onChange={(e) => setSaleManualDiscountReason(e.target.value)}
+                placeholder="Opcional"
               />
             </div>
           </div>
@@ -1832,6 +2019,10 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                 <label style={{ fontSize: "0.85em" }}>Cant.</label>
                 <Input value={newLineQty} onChange={(e) => setNewLineQty(e.target.value)} />
               </div>
+              <div className="form-field" style={{ minWidth: "160px", flex: 2 }}>
+                <label style={{ fontSize: "0.85em" }}>Ambiente</label>
+                <Input value={newLineRoomAreaName} onChange={(e) => setNewLineRoomAreaName(e.target.value)} placeholder="Living, comedor..." />
+              </div>
               <Button variant="secondary" onClick={() => void handleAddSaleLine()} disabled={loadingMenu}>
                 + Agregar línea
               </Button>
@@ -1843,17 +2034,26 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
             <>
               <table className="data-table">
                 <thead>
-                  <tr><th>COT</th><th>Cliente</th><th>Estado</th><th>Lineas</th><th>Total</th><th>Acciones</th></tr>
+                  <tr><th>COT</th><th>Cliente</th><th>Desc.</th><th>Estado</th><th>Lineas</th><th>Total</th><th>Acciones</th></tr>
                 </thead>
                 <tbody>
                   {sales.map((row) => (
                     <tr
                       key={row.id}
                       style={{ cursor: "pointer", background: row.id === highlightedSaleId ? "var(--ok-bg, #d4edda)" : undefined }}
-                      onClick={() => { setSaleId(row.id); setHighlightedSaleId(null); }}
+                      onClick={() => {
+                        setSaleId(row.id);
+                        setHighlightedSaleId(null);
+                        setCustomerId(row.customerId ?? "");
+                        setCustomerName(row.customerName ?? "");
+                        setCustomerReference(row.customerReference ?? "");
+                        setSaleManualDiscountPct(String(row.manualDiscountPct ?? 0));
+                        setSaleManualDiscountReason(row.manualDiscountReason ?? "");
+                      }}
                     >
                       <td>{row.quoteCode ?? "—"}{row.id === saleId ? " ◀" : ""}</td>
                       <td>{row.customerName ?? "—"}</td>
+                      <td>{row.discountPctApplied ? `${row.discountPctApplied}%` : "—"}</td>
                       <td>{getStatusLabel(statusLabels, "sale", row.status)}</td>
                       <td>{row.lines.length}</td>
                       <td>{row.totalAmount}</td>
@@ -1885,6 +2085,18 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                             >
                               {loadingActionId === row.id ? <Spinner size="sm" /> : "🖨️ Etiquetas"}
                             </Button>
+                            <Button
+                              variant="secondary"
+                              onClick={() => window.open(`${apiUrl}/sales/${row.id}/print/sale/html?accessToken=${encodeURIComponent(accessToken)}`, "_blank", "noreferrer")}
+                            >
+                              Venta
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              onClick={() => window.open(`${apiUrl}/sales/${row.id}/print/work-order/html?accessToken=${encodeURIComponent(accessToken)}`, "_blank", "noreferrer")}
+                            >
+                              OT
+                            </Button>
                           </div>
                         ) : (
                           <span style={{ color: "var(--muted)", fontSize: "0.78rem" }}>{row.status}</span>
@@ -1903,7 +2115,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                     <p className="flow-title">Lineas de venta {saleId.slice(0, 8)}</p>
                     <table className="data-table">
                       <thead>
-                        <tr><th>#</th><th>Categoria</th><th>SKU</th><th>Medida</th><th>Cant.</th><th>Nota</th><th>Retazo asignado</th><th>Accion</th></tr>
+                        <tr><th>#</th><th>Categoria</th><th>SKU</th><th>Medida</th><th>Cant.</th><th>Ambiente</th><th>Nota</th><th>Retazo asignado</th><th>Accion</th></tr>
                       </thead>
                       <tbody>
                         {selectedSale.lines.map((line, li) => (
@@ -1913,6 +2125,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                             <td>{line.skuCode}</td>
                             <td>{line.requestedWidthM} x {line.requestedHeightM}</td>
                             <td>{line.quantity}</td>
+                            <td>{line.roomAreaName ?? "—"}</td>
                             <td style={{ fontSize: "0.8em", color: "var(--muted)" }}>{line.lineNote ?? "—"}</td>
                             <td>{line.allocatedScrapId ? `✓ ${line.allocatedScrapId.slice(0, 8)}` : "—"}</td>
                             <td>
@@ -1945,6 +2158,12 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                         amountPaid={selectedSale.amountPaid}
                         balanceDue={selectedSale.balanceDue}
                       />
+                      <div style={{ minWidth: "220px", fontSize: "0.9em" }}>
+                        <div><strong>Cliente:</strong> {selectedSale.customerName ?? "—"}</div>
+                        <div><strong>Fuente desc.:</strong> {selectedSale.discountSource}</div>
+                        <div><strong>Código desc.:</strong> {selectedSale.discountCodeApplied ?? "—"}</div>
+                        <div><strong>Descuento:</strong> {selectedSale.discountPctApplied}%</div>
+                      </div>
                       {selectedSale.status === "DRAFT" && (
                         <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end" }}>
                           <label className="field" style={{ margin: 0 }}>
@@ -2192,18 +2411,19 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
           {batchResults.length > 0 ? (
             <table className="data-table">
               <thead>
-                <tr><th>Label ID</th><th>SKU</th><th>Linea</th><th>Imprimir</th></tr>
+                <tr><th>Label ID</th><th>SKU</th><th>Pieza</th><th>Ambiente</th><th>Imprimir</th></tr>
               </thead>
               <tbody>
                 {batchResults.map((r) => (
                   <tr key={r.labelId}>
                     <td>{r.labelId.slice(0, 8)}</td>
                     <td>{r.skuCode}</td>
-                    <td>{r.saleLineId.slice(0, 8)}</td>
+                    <td>{r.pieceIndex} de {r.pieceTotal}</td>
+                    <td>{r.roomAreaName ?? "—"}</td>
                     <td>
                       <a
                         className="link-btn"
-                        href={`${apiUrl}/labels/${r.labelId}/pdf?accessToken=${encodeURIComponent(accessToken)}`}
+                        href={`${apiUrl}/labels/${r.labelId}/html?accessToken=${encodeURIComponent(accessToken)}`}
                         target="_blank"
                         rel="noreferrer"
                       >

@@ -12,11 +12,16 @@ import { fetchStatusLabels, getStatusLabel, type StatusLabelsByEntity, type Enti
 
 type MenuKey = "dashboard" | "pricing" | "sales" | "cuts" | "scraps" | "labels" | "audit" | "settings" | "historial-cotizaciones";
 
-type ScrapRequiredAtStage = "NONE" | "AT_CUT" | "AT_SALE_CLOSE";
+type ScrapLocationPolicy = "AT_CUT_REQUIRE_LOCATION" | "AT_CUT_ROUTE_TO_INBOUND";
+
+type ScrapPolicy = {
+  classificationRule: unknown;
+  locationPolicy: ScrapLocationPolicy;
+  minWidthCm: number | null;
+};
 
 type ActiveModal =
   | { type: "pre-cut-location"; cutJobId: string }
-  | { type: "post-cut-location"; scrapId: string }
   | { type: "assign-scrap-location"; scrapId: string }
   | null;
 
@@ -387,7 +392,8 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   const [activeLine, setActiveLine] = useState<SaleLineRow | null>(null);
   const [activeSaleIdForAlloc, setActiveSaleIdForAlloc] = useState("");
 
-  const [flowRules, setFlowRules] = useState<{ scrapRequiredAtStage: ScrapRequiredAtStage } | null>(null);
+  const [scrapPolicy, setScrapPolicy] = useState<ScrapPolicy | null>(null);
+  const [scrapMinWidthCmInput, setScrapMinWidthCmInput] = useState("50");
   const [settingsStatus, setSettingsStatus] = useState("");
 
   const [quoteResult, setQuoteResult] = useState<{
@@ -426,9 +432,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
 
   const linearMeters = useMemo(() => Number(heightM || 0) * Number(quantity || 0), [heightM, quantity]);
 
-  // Load flow rules on mount so cuts section is ready
+  // Load scrap policy on mount so cuts section is ready
   useEffect(() => {
-    void loadFlowRules();
+    void loadScrapPolicy();
     void loadStatusLabels();
     void loadSelectorsData();
     void loadCategories();
@@ -888,7 +894,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     if (activeMenu === "cuts") void loadCutJobs();
     if (activeMenu === "scraps") void handleListScraps();
     if (activeMenu === "labels") void handleListLabels();
-    if (activeMenu === "settings") void loadFlowRules();
+    if (activeMenu === "settings") void loadScrapPolicy();
   }, [activeMenu]);
 
   useEffect(() => {
@@ -949,15 +955,18 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     }
   }
 
-  async function loadFlowRules() {
-    const response = await authedFetch(`${apiUrl}/settings/flow-rules`);
-    if (response.ok) setFlowRules((await response.json()) as { scrapRequiredAtStage: ScrapRequiredAtStage });
+  async function loadScrapPolicy() {
+    const response = await authedFetch(`${apiUrl}/settings/scrap-policy`);
+    if (!response.ok) return;
+    const data = (await response.json()) as ScrapPolicy;
+    setScrapPolicy(data);
+    setScrapMinWidthCmInput(String(data.minWidthCm ?? 50));
   }
 
-  // Step 1: click "Marcar Cortado" — decide AT_CUT or direct
+  // Step 1: click "Marcar Cortado" — decide immediate location or inbound route
   async function onMarkCutClick(cutJobId: string) {
-    const rules = flowRules ?? await loadFlowRulesAndReturn();
-    if (rules?.scrapRequiredAtStage === "AT_CUT") {
+    const policy = scrapPolicy ?? await loadScrapPolicyAndReturn();
+    if (policy?.locationPolicy === "AT_CUT_REQUIRE_LOCATION") {
       setActiveModal({ type: "pre-cut-location", cutJobId });
       setModalLocationCode("");
       setModalStatus("");
@@ -982,7 +991,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   }
 
   async function handleModalAssignLocation() {
-    if (activeModal?.type !== "post-cut-location" && activeModal?.type !== "assign-scrap-location") return;
+    if (activeModal?.type !== "assign-scrap-location") return;
     setLoadingModal(true);
     try {
       await doAssignLocation(activeModal.scrapId, modalLocationCode);
@@ -991,18 +1000,22 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     }
   }
 
-  async function loadFlowRulesAndReturn() {
-    const response = await authedFetch(`${apiUrl}/settings/flow-rules`);
+  async function loadScrapPolicyAndReturn() {
+    const response = await authedFetch(`${apiUrl}/settings/scrap-policy`);
     if (!response.ok) return null;
-    const data = (await response.json()) as { scrapRequiredAtStage: ScrapRequiredAtStage };
-    setFlowRules(data);
+    const data = (await response.json()) as ScrapPolicy;
+    setScrapPolicy(data);
+    setScrapMinWidthCmInput(String(data.minWidthCm ?? 50));
     return data;
   }
 
   // Step 2: call the API and react to the scrap result
   async function doMarkCut(cutJobId: string, locationCode?: string) {
-    const body: { locationCode?: string } = {};
-    if (locationCode) body.locationCode = locationCode;
+    const body: { defaultLocationCode?: string; locationCode?: string } = {};
+    if (locationCode) {
+      body.defaultLocationCode = locationCode;
+      body.locationCode = locationCode;
+    }
 
     const response = await authedFetch(`${apiUrl}/cut-jobs/${cutJobId}/mark-cut`, {
       method: "POST",
@@ -1016,20 +1029,21 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     }
     const result = (await response.json()) as {
       ok: boolean;
+      locationPolicy: ScrapLocationPolicy;
       scrap: { id: string; status: string; widthM: number; heightM: number; areaM2: number } | null;
+      scraps: Array<{ id: string; status: string; isUseful?: boolean }>;
     };
     setActiveModal(null);
 
-    if (result.scrap) {
-      setScrapId(result.scrap.id);
-      if (result.scrap.status === "PENDING_STORAGE") {
-        setCutsStatus(`Corte marcado. Retazo ${result.scrap.id.slice(0, 8)} pendiente de ubicacion.`);
-        setActiveModal({ type: "post-cut-location", scrapId: result.scrap.id });
-        setModalLocationCode("");
-        setModalStatus("");
-      } else {
-        setCutsStatus(`Corte marcado. Retazo: ${result.scrap.id.slice(0, 8)} (${result.scrap.status})`);
-      }
+    if (result.scraps.length > 0) {
+      setScrapId(result.scraps[0].id);
+      const usefulCount = result.scraps.filter((scrap) => scrap.isUseful).length;
+      const inboundCount = result.scraps.filter((scrap) => scrap.status === "PENDING_INBOUND").length;
+      const storedCount = result.scraps.filter((scrap) => scrap.status === "STORED").length;
+      const discardedCount = result.scraps.filter((scrap) => scrap.status === "DISCARDED").length;
+      setCutsStatus(
+        `Corte marcado. Retazos: ${usefulCount} utiles, ${storedCount} ubicados, ${inboundCount} pendientes de ingreso, ${discardedCount} descartados.`
+      );
     } else {
       setCutsStatus(`Corte marcado: ${cutJobId.slice(0, 8)} (sin retazo util)`);
     }
@@ -1160,20 +1174,23 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     }
   }
 
-  async function handleUpdateFlowRules(stage: ScrapRequiredAtStage) {
-    setLoadingActionId(stage);
+  async function handleUpdateScrapPolicy(locationPolicy: ScrapLocationPolicy) {
+    setLoadingActionId(locationPolicy);
     try {
-      const response = await authedFetch(`${apiUrl}/settings/flow-rules`, {
+      const minWidthCm = Number(scrapMinWidthCmInput);
+      const response = await authedFetch(`${apiUrl}/settings/scrap-policy`, {
         method: "PUT",
-        body: JSON.stringify({ scrapRequiredAtStage: stage })
+        body: JSON.stringify({ minWidthCm, locationPolicy })
       });
       if (!response.ok) {
         const body = (await response.json()) as { message?: string };
         setSettingsStatus(body.message ?? `Error: HTTP ${response.status}`);
         return;
       }
-      setFlowRules({ scrapRequiredAtStage: stage });
-      setSettingsStatus(`Regla actualizada: ${stage}`);
+      const saved = (await response.json()) as ScrapPolicy;
+      setScrapPolicy(saved);
+      setScrapMinWidthCmInput(String(saved.minWidthCm ?? minWidthCm));
+      setSettingsStatus(`Regla actualizada: ancho sobrante >= ${saved.minWidthCm ?? minWidthCm} cm.`);
     } finally {
       setLoadingActionId(null);
     }
@@ -2229,10 +2246,12 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
         <article className="flow-card" id="section-cuts">
           <p className="flow-title">Cortes (Cut Jobs)</p>
           <p className="status-note">{cutsStatus}</p>
-          {flowRules ? (
+          {scrapPolicy ? (
             <p className="status-note">
-              Regla activa: <strong>{flowRules.scrapRequiredAtStage}</strong>
-              {flowRules.scrapRequiredAtStage === "AT_CUT" ? " — se pedira ubicacion al marcar cortado" : ""}
+              Regla activa: <strong>ancho sobrante &gt;= {scrapPolicy.minWidthCm ?? 50} cm</strong>
+              {scrapPolicy.locationPolicy === "AT_CUT_REQUIRE_LOCATION"
+                ? " — se pedira ubicacion al marcar cortado"
+                : " — los utiles quedaran pendientes de ingreso"}
             </p>
           ) : null}
           <div className="inline-actions">
@@ -2354,7 +2373,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                     <td>{row.skuCode}</td>
                     <td>{row.locationCode ?? "—"}</td>
                     <td>
-                      {row.status === "PENDING_STORAGE" ? (
+                      {row.status === "PENDING_INBOUND" || row.status === "PENDING_STORAGE" ? (
                         <Button
                           variant="secondary"
                           onClick={() => {
@@ -2363,7 +2382,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                             setModalStatus("");
                           }}
                         >
-                          Asignar Ubicacion
+                          Ubicar ahora
                         </Button>
                       ) : row.status === "STORED" ? (
                         <span style={{ color: "var(--ok)", fontSize: "0.78rem" }}>✓ {row.locationCode}</span>
@@ -2532,44 +2551,47 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
 
       {activeMenu === "settings" ? (
         <article className="flow-card">
-          <p className="flow-title">Configuracion de Flujo</p>
+          <p className="flow-title">Configuracion de Retazos</p>
           <p className="status-note">{settingsStatus}</p>
           <div className="inline-actions">
-            <Button variant="secondary" onClick={loadFlowRules} disabled={loadingMenu}>
+            <Button variant="secondary" onClick={loadScrapPolicy} disabled={loadingMenu}>
               {loadingMenu ? <Spinner size="sm" /> : "Refrescar"}
             </Button>
           </div>
-          {flowRules ? (
+          {scrapPolicy ? (
             <>
               <p className="status-note">
-                Regla activa: <strong>{flowRules.scrapRequiredAtStage}</strong>
+                Regla activa: <strong>ancho sobrante &gt;= {scrapPolicy.minWidthCm ?? 50} cm</strong>
               </p>
-              <p className="flow-title">Cambiar regla de retazo obligatorio</p>
+              <label className="field">
+                <span>Ancho minimo util (cm)</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={scrapMinWidthCmInput}
+                  onChange={(e) => setScrapMinWidthCmInput(e.target.value)}
+                />
+              </label>
+              <p className="flow-title">Politica al cerrar corte</p>
               <div className="inline-actions">
                 <Button
-                  variant={flowRules.scrapRequiredAtStage === "NONE" ? "primary" : "secondary"}
-                  onClick={() => void handleUpdateFlowRules("NONE")}
+                  variant={scrapPolicy.locationPolicy === "AT_CUT_REQUIRE_LOCATION" ? "primary" : "secondary"}
+                  onClick={() => void handleUpdateScrapPolicy("AT_CUT_REQUIRE_LOCATION")}
                   disabled={!!loadingActionId}
                 >
-                  {loadingActionId === "NONE" ? <Spinner size="sm" /> : "NONE (sin enforcement)"}
+                  {loadingActionId === "AT_CUT_REQUIRE_LOCATION" ? <Spinner size="sm" /> : "Exigir ubicacion inmediata"}
                 </Button>
                 <Button
-                  variant={flowRules.scrapRequiredAtStage === "AT_CUT" ? "primary" : "secondary"}
-                  onClick={() => void handleUpdateFlowRules("AT_CUT")}
+                  variant={scrapPolicy.locationPolicy === "AT_CUT_ROUTE_TO_INBOUND" ? "primary" : "secondary"}
+                  onClick={() => void handleUpdateScrapPolicy("AT_CUT_ROUTE_TO_INBOUND")}
                   disabled={!!loadingActionId}
                 >
-                  {loadingActionId === "AT_CUT" ? <Spinner size="sm" /> : "AT_CUT (requiere ubicacion al cortar)"}
-                </Button>
-                <Button
-                  variant={flowRules.scrapRequiredAtStage === "AT_SALE_CLOSE" ? "primary" : "secondary"}
-                  onClick={() => void handleUpdateFlowRules("AT_SALE_CLOSE")}
-                  disabled={!!loadingActionId}
-                >
-                  {loadingActionId === "AT_SALE_CLOSE" ? <Spinner size="sm" /> : "AT_SALE_CLOSE (requiere retazos resueltos al confirmar)"}
+                  {loadingActionId === "AT_CUT_ROUTE_TO_INBOUND" ? <Spinner size="sm" /> : "Enviar a ingreso"}
                 </Button>
               </div>
               <p className="status-note" style={{ marginTop: "1rem", fontSize: "0.85em", opacity: 0.7 }}>
-                NONE: sin bloqueos. AT_CUT: al marcar corte con retazo util, se debe proveer ubicacion (locationCode). AT_SALE_CLOSE: al confirmar venta, no puede haber retazos en estado PENDING_STORAGE de esa venta.
+                La formula actual se evalua contra el ancho sobrante del retazo. Si la politica exige ubicacion inmediata, el corte se bloquea hasta informar posicion. Si no, el retazo util queda pendiente de ingreso.
               </p>
             </>
           ) : (
@@ -2608,14 +2630,14 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
         </article>
       ) : null}
 
-      {/* Dialog: pedir ubicacion ANTES del corte (AT_CUT) */}
+      {/* Dialog: pedir ubicacion al cerrar el corte */}
       <Dialog
         open={activeModal?.type === "pre-cut-location"}
         onClose={() => setActiveModal(null)}
         title="Ubicacion del retazo (requerida)"
       >
         <p className="status-note">
-          La regla AT_CUT requiere indicar donde se almacenara el retazo antes de registrar el corte.
+          La politica actual requiere indicar donde se almacenara el retazo util antes de registrar el corte.
         </p>
         <label className="field">
           <span>Codigo de posicion</span>
@@ -2634,35 +2656,6 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
             {loadingModal ? <Spinner size="sm" /> : "Confirmar y marcar cortado"}
           </Button>
           <Button variant="secondary" onClick={() => setActiveModal(null)} disabled={loadingModal}>Cancelar</Button>
-        </div>
-      </Dialog>
-
-      {/* Dialog: asignar ubicacion DESPUES del corte (retazo PENDING_STORAGE) */}
-      <Dialog
-        open={activeModal?.type === "post-cut-location"}
-        onClose={() => setActiveModal(null)}
-        title="Asignar ubicacion al retazo"
-      >
-        <p className="status-note">
-          El retazo generado quedo pendiente de almacenamiento. Indica donde lo vas a guardar.
-        </p>
-        <label className="field">
-          <span>Codigo de posicion</span>
-          <Input
-            value={modalLocationCode}
-            onChange={(e) => setModalLocationCode(e.target.value)}
-            placeholder="ej. A-01"
-          />
-        </label>
-        {modalStatus ? <p className="status-note" style={{ color: "var(--danger)" }}>{modalStatus}</p> : null}
-        <div className="inline-actions">
-          <Button
-            onClick={() => void handleModalAssignLocation()}
-            disabled={!modalLocationCode || loadingModal}
-          >
-            {loadingModal ? <Spinner size="sm" /> : "Asignar ubicacion"}
-          </Button>
-          <Button variant="secondary" onClick={() => setActiveModal(null)} disabled={loadingModal}>Omitir por ahora</Button>
         </div>
       </Dialog>
 

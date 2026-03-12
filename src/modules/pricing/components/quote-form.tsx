@@ -20,9 +20,67 @@ type ScrapPolicy = {
   minWidthCm: number | null;
 };
 
+type CutScrapLookupMode = "OFF" | "MANUAL" | "AUTO_SUGGEST" | "REQUIRE_DECISION";
+type CutScrapLookupScope = "CURRENT_LINE" | "ENTIRE_ORDER";
+
+type CutScrapLookupPolicy = {
+  mode: CutScrapLookupMode;
+  scope: CutScrapLookupScope;
+  allowManualSearch: boolean;
+  maxSuggestionsPerLine: number;
+};
+
+type CompatibleScrapSuggestion = {
+  scrapId: string;
+  labelCode?: string;
+  locationCode: string | null;
+  widthM: number;
+  heightM: number;
+  areaM2?: number;
+  excessAreaM2?: number;
+  fitScore?: number;
+  createdAt?: string;
+};
+
+type SoftHoldPolicy = {
+  enabled: boolean;
+  defaultMinutes: number;
+  maxMinutes: number;
+};
+
+type SoftHoldInfo = {
+  active: boolean;
+  id?: string;
+  scrapId?: string;
+  saleId?: string;
+  saleLineId?: string;
+  status?: string;
+  expiresAt?: string;
+  heldBy?: { email: string; fullName: string };
+  reason?: string;
+};
+
+type CompatibleScrapLine = {
+  saleLineId: string;
+  skuCode: string;
+  requestedWidthM: number;
+  requestedHeightM: number;
+  suggestions: CompatibleScrapSuggestion[];
+};
+
+type CompatibleScrapsResult = {
+  policy?: CutScrapLookupPolicy;
+  saleId: string;
+  cutJobId?: string;
+  lines: CompatibleScrapLine[];
+};
+
 type ActiveModal =
   | { type: "pre-cut-location"; cutJobId: string }
   | { type: "assign-scrap-location"; scrapId: string }
+  | { type: "cut-compatible-scraps"; cutJobId: string }
+  | { type: "require-decision-scraps"; cutJobId: string }
+  | { type: "offer-preview"; saleId: string }
   | null;
 
 type QuoteItem = {
@@ -409,6 +467,19 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [scraps, setScraps] = useState<ScrapRow[]>([]);
   const [cutJobs, setCutJobs] = useState<CutJobRow[]>([]);
+
+  // SPEC-56: cut scrap lookup policy
+  const [cutScrapPolicy, setCutScrapPolicy] = useState<CutScrapLookupPolicy | null>(null);
+  const [compatibleScrapsResult, setCompatibleScrapsResult] = useState<CompatibleScrapsResult | null>(null);
+  const [compatibleScrapsStatus, setCompatibleScrapsStatus] = useState("");
+
+  // SPEC-57: offer preview
+  const [offerPreviewResult, setOfferPreviewResult] = useState<CompatibleScrapsResult | null>(null);
+  const [offerPreviewStatus, setOfferPreviewStatus] = useState("");
+
+  // SPEC-58: soft hold
+  const [softHoldPolicy, setSoftHoldPolicy] = useState<SoftHoldPolicy | null>(null);
+  const [softHolds, setSoftHolds] = useState<Record<string, SoftHoldInfo>>({});
 
   const [batchResults, setBatchResults] = useState<BatchLabelResult[]>([]);
   const [labelList, setLabelList] = useState<LabelRow[]>([]);
@@ -891,10 +962,10 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
   useEffect(() => {
     if (activeMenu === "dashboard") void loadDashboard();
     if (activeMenu === "audit") void loadAudit();
-    if (activeMenu === "cuts") void loadCutJobs();
+    if (activeMenu === "cuts") { void loadCutJobs(); void loadCutScrapPolicy(); void loadSoftHoldPolicy(); }
     if (activeMenu === "scraps") void handleListScraps();
     if (activeMenu === "labels") void handleListLabels();
-    if (activeMenu === "settings") void loadScrapPolicy();
+    if (activeMenu === "settings") { void loadScrapPolicy(); void loadCutScrapPolicy(); void loadSoftHoldPolicy(); }
   }, [activeMenu]);
 
   useEffect(() => {
@@ -961,6 +1032,128 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     const data = (await response.json()) as ScrapPolicy;
     setScrapPolicy(data);
     setScrapMinWidthCmInput(String(data.minWidthCm ?? 50));
+  }
+
+  // SPEC-56: load cut scrap lookup policy
+  async function loadCutScrapPolicy() {
+    const response = await authedFetch(`${apiUrl}/settings/cut-scrap-lookup-policy`);
+    if (!response.ok) return;
+    const data = (await response.json()) as CutScrapLookupPolicy;
+    setCutScrapPolicy(data);
+  }
+
+  async function handleCheckCompatibleScraps(cutJobId: string) {
+    setCompatibleScrapsStatus("Buscando retazos compatibles...");
+    setCompatibleScrapsResult(null);
+    setLoadingActionId(`compat-${cutJobId}`);
+    try {
+      const response = await authedFetch(`${apiUrl}/cut-jobs/${cutJobId}/compatible-scraps`);
+      if (!response.ok) {
+        setCompatibleScrapsStatus(`Error: HTTP ${response.status}`);
+        return;
+      }
+      const result = (await response.json()) as CompatibleScrapsResult;
+      setCompatibleScrapsResult(result);
+      const total = result.lines.reduce((acc, l) => acc + l.suggestions.length, 0);
+      if (total === 0) {
+        setCompatibleScrapsStatus("Sin retazos compatibles disponibles.");
+      } else {
+        setCompatibleScrapsStatus(`${total} retazo(s) compatible(s) encontrado(s).`);
+      }
+
+      // If REQUIRE_DECISION mode and has suggestions, show modal
+      if (result.policy?.mode === "REQUIRE_DECISION" && total > 0) {
+        setActiveModal({ type: "require-decision-scraps", cutJobId });
+      } else if (total > 0) {
+        setActiveModal({ type: "cut-compatible-scraps", cutJobId });
+      }
+      // SPEC-58: load soft hold info for suggestions
+      const allSuggestions = result.lines.flatMap((l) => l.suggestions);
+      if (allSuggestions.length > 0) void loadSoftHoldsForSuggestions(allSuggestions);
+    } finally {
+      setLoadingActionId(null);
+    }
+  }
+
+  async function handleSkipCompatibleScraps(cutJobId: string) {
+    setCompatibleScrapsResult(null);
+    setCompatibleScrapsStatus("Omitido: continuando con corte nuevo.");
+    setActiveModal(null);
+    await onMarkCutClick(cutJobId);
+  }
+
+  // SPEC-57: offer preview for sale
+  async function handleOfferPreview(offerSaleId: string) {
+    setOfferPreviewStatus("Buscando opciones ya cortadas...");
+    setOfferPreviewResult(null);
+    setLoadingActionId(`offer-${offerSaleId}`);
+    try {
+      const response = await authedFetch(`${apiUrl}/sales/${offerSaleId}/compatible-scraps/offer-preview`, {
+        method: "POST",
+        body: JSON.stringify({ limitPerLine: 3 })
+      });
+      if (!response.ok) {
+        setOfferPreviewStatus(`Error: HTTP ${response.status}`);
+        return;
+      }
+      const result = (await response.json()) as CompatibleScrapsResult;
+      setOfferPreviewResult(result);
+      const total = result.lines.reduce((acc, l) => acc + l.suggestions.length, 0);
+      if (total === 0) {
+        setOfferPreviewStatus("Sin opciones ya cortadas disponibles.");
+      } else {
+        setOfferPreviewStatus(`${total} opcion(es) disponible(s).`);
+        setActiveModal({ type: "offer-preview", saleId: offerSaleId });
+        // SPEC-58: load soft hold info for suggestions
+        const allSuggestions = result.lines.flatMap((l) => l.suggestions);
+        if (allSuggestions.length > 0) void loadSoftHoldsForSuggestions(allSuggestions);
+      }
+    } finally {
+      setLoadingActionId(null);
+    }
+  }
+
+  async function handleGeneratePickList(pickSaleId: string, items: Array<{ saleLineId: string; scrapId: string }>) {
+    if (items.length === 0) return;
+    const response = await authedFetch(`${apiUrl}/sales/${pickSaleId}/compatible-scraps/pick-list`, {
+      method: "POST",
+      body: JSON.stringify({ items })
+    });
+    if (!response.ok) return;
+    const html = await response.text();
+    const w = window.open("", "_blank");
+    if (w) { w.document.write(html); w.document.close(); }
+  }
+
+  async function handleAllocateFromOffer(offerSaleId: string, saleLineId: string, scrapId: string) {
+    setLoadingActionId(scrapId);
+    try {
+      const response = await authedFetch(
+        `${apiUrl}/sales/${offerSaleId}/lines/${saleLineId}/allocate-scrap`,
+        { method: "POST", body: JSON.stringify({ scrapId }) }
+      );
+      if (!response.ok) {
+        const err = (await response.json()) as { message?: string };
+        setOfferPreviewStatus(err.message ?? "Error al asignar retazo.");
+        return;
+      }
+      setOfferPreviewStatus(`Retazo ${scrapId.slice(0, 8)} asignado.`);
+      // Refresh offer preview and sales
+      await handleListSales();
+      // Remove from offer results
+      if (offerPreviewResult) {
+        setOfferPreviewResult({
+          ...offerPreviewResult,
+          lines: offerPreviewResult.lines.map((l) =>
+            l.saleLineId === saleLineId
+              ? { ...l, suggestions: l.suggestions.filter((s) => s.scrapId !== scrapId) }
+              : l
+          )
+        });
+      }
+    } finally {
+      setLoadingActionId(null);
+    }
   }
 
   // Step 1: click "Marcar Cortado" — decide immediate location or inbound route
@@ -1194,6 +1387,110 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     } finally {
       setLoadingActionId(null);
     }
+  }
+
+  // SPEC-56: update cut scrap lookup policy
+  async function handleUpdateCutScrapPolicy(updates: Partial<CutScrapLookupPolicy>) {
+    setLoadingActionId("cutScrapPolicy");
+    try {
+      const response = await authedFetch(`${apiUrl}/settings/cut-scrap-lookup-policy`, {
+        method: "PUT",
+        body: JSON.stringify(updates)
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { message?: string };
+        setSettingsStatus(body.message ?? `Error: HTTP ${response.status}`);
+        return;
+      }
+      const saved = (await response.json()) as CutScrapLookupPolicy;
+      setCutScrapPolicy(saved);
+      setSettingsStatus(`Politica de verificacion actualizada: modo ${saved.mode}.`);
+    } finally {
+      setLoadingActionId(null);
+    }
+  }
+
+  // SPEC-58: soft hold handlers
+  async function loadSoftHoldPolicy() {
+    const response = await authedFetch(`${apiUrl}/settings/scrap-soft-hold-policy`);
+    if (!response.ok) return;
+    const data = (await response.json()) as SoftHoldPolicy;
+    setSoftHoldPolicy(data);
+  }
+
+  async function handleUpdateSoftHoldPolicy(updates: Partial<SoftHoldPolicy>) {
+    setLoadingActionId("softHoldPolicy");
+    try {
+      const response = await authedFetch(`${apiUrl}/settings/scrap-soft-hold-policy`, {
+        method: "PUT",
+        body: JSON.stringify(updates)
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { message?: string };
+        setSettingsStatus(body.message ?? `Error: HTTP ${response.status}`);
+        return;
+      }
+      const saved = (await response.json()) as SoftHoldPolicy;
+      setSoftHoldPolicy(saved);
+      setSettingsStatus(`Politica de reserva temporal actualizada.`);
+    } finally {
+      setLoadingActionId(null);
+    }
+  }
+
+  async function handleCreateSoftHold(scrapId: string, saleId: string, saleLineId?: string) {
+    setLoadingActionId(`hold-${scrapId}`);
+    try {
+      const response = await authedFetch(`${apiUrl}/scraps/${scrapId}/soft-hold`, {
+        method: "POST",
+        body: JSON.stringify({ saleId, saleLineId })
+      });
+      if (!response.ok) {
+        const err = (await response.json()) as { message?: string };
+        setOfferPreviewStatus(err.message ?? "Error al reservar retazo.");
+        setCompatibleScrapsStatus(err.message ?? "Error al reservar retazo.");
+        return;
+      }
+      const hold = (await response.json()) as SoftHoldInfo;
+      setSoftHolds((prev) => ({ ...prev, [scrapId]: { ...hold, active: true } }));
+      setOfferPreviewStatus(`Retazo ${scrapId.slice(0, 8)} reservado hasta ${hold.expiresAt ? new Date(hold.expiresAt).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" }) : "—"}.`);
+      setCompatibleScrapsStatus(`Retazo ${scrapId.slice(0, 8)} reservado.`);
+    } finally {
+      setLoadingActionId(null);
+    }
+  }
+
+  async function handleReleaseSoftHold(scrapId: string) {
+    setLoadingActionId(`release-${scrapId}`);
+    try {
+      const response = await authedFetch(`${apiUrl}/scraps/${scrapId}/soft-hold`, { method: "DELETE" });
+      if (!response.ok) {
+        const err = (await response.json()) as { message?: string };
+        setOfferPreviewStatus(err.message ?? "Error al liberar reserva.");
+        return;
+      }
+      setSoftHolds((prev) => {
+        const next = { ...prev };
+        delete next[scrapId];
+        return next;
+      });
+      setOfferPreviewStatus(`Reserva del retazo ${scrapId.slice(0, 8)} liberada.`);
+      setCompatibleScrapsStatus(`Reserva liberada.`);
+    } finally {
+      setLoadingActionId(null);
+    }
+  }
+
+  async function fetchSoftHoldForScrap(scrapId: string) {
+    const response = await authedFetch(`${apiUrl}/scraps/${scrapId}/soft-hold`);
+    if (!response.ok) return;
+    const hold = (await response.json()) as SoftHoldInfo;
+    setSoftHolds((prev) => ({ ...prev, [scrapId]: hold }));
+  }
+
+  async function loadSoftHoldsForSuggestions(suggestions: CompatibleScrapSuggestion[]) {
+    if (!softHoldPolicy?.enabled) return;
+    await Promise.all(suggestions.map((s) => fetchSoftHoldForScrap(s.scrapId)));
   }
 
   async function handleFetchMatches(saleId: string, line: SaleLineRow) {
@@ -2129,7 +2426,21 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                 if (!selectedSale || selectedSale.lines.length === 0) return null;
                 return (
                   <div style={{ marginTop: "1rem" }}>
-                    <p className="flow-title">Lineas de venta {saleId.slice(0, 8)}</p>
+                    <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+                      <p className="flow-title" style={{ margin: 0 }}>Lineas de venta {saleId.slice(0, 8)}</p>
+                      {selectedSale.status === "DRAFT" && selectedSale.lines.some((l) => !l.allocatedScrapId) && (
+                        <Button
+                          variant="secondary"
+                          onClick={() => void handleOfferPreview(saleId)}
+                          disabled={loadingActionId === `offer-${saleId}`}
+                        >
+                          {loadingActionId === `offer-${saleId}` ? <Spinner size="sm" /> : "Ofrecer opciones ya cortadas"}
+                        </Button>
+                      )}
+                    </div>
+                    {offerPreviewStatus && offerPreviewResult?.saleId === saleId ? (
+                      <p className="status-note">{offerPreviewStatus}</p>
+                    ) : null}
                     <table className="data-table">
                       <thead>
                         <tr><th>#</th><th>Categoria</th><th>SKU</th><th>Medida</th><th>Cant.</th><th>Ambiente</th><th>Nota</th><th>Retazo asignado</th><th>Accion</th></tr>
@@ -2254,6 +2565,15 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                 : " — los utiles quedaran pendientes de ingreso"}
             </p>
           ) : null}
+          {cutScrapPolicy && cutScrapPolicy.mode !== "OFF" ? (
+            <p className="status-note">
+              Verificacion de retazos: <strong>
+                {cutScrapPolicy.mode === "MANUAL" ? "Manual" : cutScrapPolicy.mode === "AUTO_SUGGEST" ? "Sugerencia automatica" : "Decision obligatoria"}
+              </strong>
+              {" — alcance: "}{cutScrapPolicy.scope === "ENTIRE_ORDER" ? "toda la orden" : "linea actual"}
+            </p>
+          ) : null}
+          {compatibleScrapsStatus ? <p className="status-note">{compatibleScrapsStatus}</p> : null}
           <div className="inline-actions">
             <Button variant={cutFilterStatus === "PENDING" ? "primary" : "secondary"} onClick={() => setCutFilterStatus("PENDING")}>
               Pendientes
@@ -2292,17 +2612,40 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
                     <td>{getStatusLabel(statusLabels, "cut_job", row.status)}</td>
                     <td>{row.cutAt ? formatLocalDateTime(row.cutAt) : "-"}</td>
                     <td>
+                      <div style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap" }}>
                       {row.status === "PENDING" || row.status === "IN_PROGRESS" ? (
-                        <Button
-                          variant="secondary"
-                          onClick={() => void onMarkCutClick(row.id)}
-                          disabled={loadingActionId === row.id}
-                        >
-                          {loadingActionId === row.id ? <Spinner size="sm" /> : "Marcar Cortado"}
-                        </Button>
+                        <>
+                          {cutScrapPolicy && cutScrapPolicy.mode !== "OFF" && (
+                            cutScrapPolicy.mode === "AUTO_SUGGEST" || cutScrapPolicy.mode === "REQUIRE_DECISION" ? (
+                              <Button
+                                variant="secondary"
+                                onClick={() => void handleCheckCompatibleScraps(row.id)}
+                                disabled={loadingActionId === `compat-${row.id}`}
+                              >
+                                {loadingActionId === `compat-${row.id}` ? <Spinner size="sm" /> : "Verificar retazos"}
+                              </Button>
+                            ) : cutScrapPolicy.mode === "MANUAL" && cutScrapPolicy.allowManualSearch ? (
+                              <Button
+                                variant="secondary"
+                                onClick={() => void handleCheckCompatibleScraps(row.id)}
+                                disabled={loadingActionId === `compat-${row.id}`}
+                              >
+                                {loadingActionId === `compat-${row.id}` ? <Spinner size="sm" /> : "Buscar retazos"}
+                              </Button>
+                            ) : null
+                          )}
+                          <Button
+                            variant="secondary"
+                            onClick={() => void onMarkCutClick(row.id)}
+                            disabled={loadingActionId === row.id}
+                          >
+                            {loadingActionId === row.id ? <Spinner size="sm" /> : "Marcar Cortado"}
+                          </Button>
+                        </>
                       ) : (
-                        "-"
+                        <span>-</span>
                       )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -2597,6 +2940,112 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
           ) : (
             <p className="status-note">Cargando configuracion...</p>
           )}
+
+          {/* SPEC-56: Cut scrap lookup policy */}
+          <div style={{ marginTop: "2rem", borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+            <p className="flow-title">Verificacion de retazos al cortar</p>
+            {cutScrapPolicy ? (
+              <>
+                <p className="status-note">
+                  Modo actual: <strong>
+                    {cutScrapPolicy.mode === "OFF" ? "Apagado" : cutScrapPolicy.mode === "MANUAL" ? "Manual" : cutScrapPolicy.mode === "AUTO_SUGGEST" ? "Sugerencia automatica" : "Decision obligatoria"}
+                  </strong>
+                </p>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
+                  {(["OFF", "MANUAL", "AUTO_SUGGEST", "REQUIRE_DECISION"] as const).map((m) => (
+                    <Button
+                      key={m}
+                      variant={cutScrapPolicy.mode === m ? "primary" : "secondary"}
+                      onClick={() => void handleUpdateCutScrapPolicy({ mode: m })}
+                      disabled={!!loadingActionId}
+                    >
+                      {m === "OFF" ? "Apagado" : m === "MANUAL" ? "Manual" : m === "AUTO_SUGGEST" ? "Sugerencia auto." : "Decision obligatoria"}
+                    </Button>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "flex-end" }}>
+                  <label className="field" style={{ margin: 0 }}>
+                    <span>Alcance</span>
+                    <Select value={cutScrapPolicy.scope} onChange={(e) => void handleUpdateCutScrapPolicy({ scope: e.target.value as "CURRENT_LINE" | "ENTIRE_ORDER" })}>
+                      <option value="CURRENT_LINE">Linea actual</option>
+                      <option value="ENTIRE_ORDER">Toda la orden</option>
+                    </Select>
+                  </label>
+                  <label className="field" style={{ margin: 0 }}>
+                    <span>Max sugerencias por linea</span>
+                    <Input
+                      type="number" min="1" max="10"
+                      value={String(cutScrapPolicy.maxSuggestionsPerLine)}
+                      onChange={(e) => void handleUpdateCutScrapPolicy({ maxSuggestionsPerLine: Number(e.target.value) })}
+                      style={{ width: "80px" }}
+                    />
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9em" }}>
+                    <input
+                      type="checkbox"
+                      checked={cutScrapPolicy.allowManualSearch}
+                      onChange={(e) => void handleUpdateCutScrapPolicy({ allowManualSearch: e.target.checked })}
+                    />
+                    Permitir busqueda manual
+                  </label>
+                </div>
+              </>
+            ) : (
+              <p className="status-note">Cargando...</p>
+            )}
+          </div>
+
+          {/* SPEC-58: Soft hold policy */}
+          <div style={{ marginTop: "2rem", borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+            <p className="flow-title">Reserva temporal de retazos (Soft Hold)</p>
+            {softHoldPolicy ? (
+              <>
+                <p className="status-note">
+                  Estado: <strong>{softHoldPolicy.enabled ? "Habilitado" : "Deshabilitado"}</strong>
+                </p>
+                <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                  <Button
+                    variant={softHoldPolicy.enabled ? "primary" : "secondary"}
+                    onClick={() => void handleUpdateSoftHoldPolicy({ enabled: true })}
+                    disabled={!!loadingActionId}
+                  >
+                    Habilitado
+                  </Button>
+                  <Button
+                    variant={!softHoldPolicy.enabled ? "primary" : "secondary"}
+                    onClick={() => void handleUpdateSoftHoldPolicy({ enabled: false })}
+                    disabled={!!loadingActionId}
+                  >
+                    Deshabilitado
+                  </Button>
+                </div>
+                {softHoldPolicy.enabled && (
+                  <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "flex-end" }}>
+                    <label className="field" style={{ margin: 0 }}>
+                      <span>Minutos por defecto</span>
+                      <Input
+                        type="number" min="1" max="120"
+                        value={String(softHoldPolicy.defaultMinutes)}
+                        onChange={(e) => void handleUpdateSoftHoldPolicy({ defaultMinutes: Number(e.target.value) })}
+                        style={{ width: "80px" }}
+                      />
+                    </label>
+                    <label className="field" style={{ margin: 0 }}>
+                      <span>Minutos maximo</span>
+                      <Input
+                        type="number" min="1" max="120"
+                        value={String(softHoldPolicy.maxMinutes)}
+                        onChange={(e) => void handleUpdateSoftHoldPolicy({ maxMinutes: Number(e.target.value) })}
+                        style={{ width: "80px" }}
+                      />
+                    </label>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="status-note">Cargando...</p>
+            )}
+          </div>
         </article>
       ) : null}
 
@@ -2686,6 +3135,208 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
           </Button>
           <Button variant="secondary" onClick={() => setActiveModal(null)} disabled={loadingModal}>Cancelar</Button>
         </div>
+      </Dialog>
+
+      {/* SPEC-56: Dialog retazos compatibles en cortes */}
+      <Dialog
+        open={activeModal?.type === "cut-compatible-scraps" || activeModal?.type === "require-decision-scraps"}
+        onClose={() => { if (activeModal?.type !== "require-decision-scraps") setActiveModal(null); }}
+        title={activeModal?.type === "require-decision-scraps" ? "Decision requerida: retazos compatibles" : "Retazos compatibles encontrados"}
+      >
+        {compatibleScrapsResult && compatibleScrapsResult.lines.length > 0 ? (
+          <>
+            {activeModal?.type === "require-decision-scraps" && (
+              <p className="status-note" style={{ color: "var(--warning, #e67e22)" }}>
+                Se encontraron retazos compatibles. Debes decidir antes de continuar.
+              </p>
+            )}
+            {compatibleScrapsResult.lines.map((line) => (
+              line.suggestions.length > 0 ? (
+                <div key={line.saleLineId} style={{ marginBottom: "1rem" }}>
+                  <p style={{ fontSize: "0.85em", margin: "0 0 0.25rem 0" }}>
+                    <strong>{line.skuCode}</strong> — {line.requestedWidthM} x {line.requestedHeightM} m
+                  </p>
+                  <table className="data-table">
+                    <thead>
+                      <tr><th>Retazo</th><th>Medida</th><th>Excedente</th><th>Ubicacion</th><th>Estado</th><th>Accion</th></tr>
+                    </thead>
+                    <tbody>
+                      {line.suggestions.map((s) => {
+                        const hold = softHolds[s.scrapId];
+                        const isHeld = hold?.active;
+                        const holdExpiry = hold?.expiresAt ? new Date(hold.expiresAt).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" }) : null;
+                        return (
+                        <tr key={s.scrapId}>
+                          <td>{s.scrapId.slice(0, 8)}</td>
+                          <td>{s.widthM} x {s.heightM}</td>
+                          <td>{s.fitScore?.toFixed(3) ?? "—"} m²</td>
+                          <td><strong>{s.locationCode ?? "—"}</strong></td>
+                          <td>
+                            {isHeld ? (
+                              <span style={{ color: "var(--warning, #e67e22)", fontSize: "0.85em" }}>
+                                Reservado por {hold.heldBy?.fullName ?? "—"} hasta {holdExpiry}
+                              </span>
+                            ) : (
+                              <span style={{ color: "var(--ok, green)", fontSize: "0.85em" }}>Disponible</span>
+                            )}
+                          </td>
+                          <td style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap" }}>
+                            <Button
+                              variant="secondary"
+                              onClick={() => {
+                                void handleAllocateFromOffer(compatibleScrapsResult.saleId, line.saleLineId, s.scrapId);
+                                setActiveModal(null);
+                                setCompatibleScrapsStatus(`Retazo ${s.scrapId.slice(0, 8)} asignado a linea.`);
+                              }}
+                              disabled={!!loadingActionId}
+                            >
+                              {loadingActionId === s.scrapId ? <Spinner size="sm" /> : "Usar"}
+                            </Button>
+                            {softHoldPolicy?.enabled && !isHeld && (
+                              <Button
+                                variant="secondary"
+                                onClick={() => void handleCreateSoftHold(s.scrapId, compatibleScrapsResult.saleId, line.saleLineId)}
+                                disabled={!!loadingActionId}
+                              >
+                                {loadingActionId === `hold-${s.scrapId}` ? <Spinner size="sm" /> : "Reservar"}
+                              </Button>
+                            )}
+                            {isHeld && (
+                              <Button
+                                variant="secondary"
+                                onClick={() => void handleReleaseSoftHold(s.scrapId)}
+                                disabled={!!loadingActionId}
+                              >
+                                {loadingActionId === `release-${s.scrapId}` ? <Spinner size="sm" /> : "Liberar"}
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null
+            ))}
+            <div className="inline-actions">
+              {activeModal?.type === "require-decision-scraps" && activeModal.cutJobId ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => void handleSkipCompatibleScraps(activeModal.cutJobId)}
+                >
+                  Continuar con corte nuevo
+                </Button>
+              ) : (
+                <Button variant="secondary" onClick={() => setActiveModal(null)}>Cerrar</Button>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="status-note">Sin retazos compatibles.</p>
+        )}
+      </Dialog>
+
+      {/* SPEC-57: Dialog oferta de retazos para venta */}
+      <Dialog
+        open={activeModal?.type === "offer-preview"}
+        onClose={() => setActiveModal(null)}
+        title="Opciones ya cortadas disponibles"
+      >
+        {offerPreviewResult && offerPreviewResult.lines.length > 0 ? (
+          <>
+            {offerPreviewResult.lines.map((line) => (
+              line.suggestions.length > 0 ? (
+                <div key={line.saleLineId} style={{ marginBottom: "1rem" }}>
+                  <p style={{ fontSize: "0.85em", margin: "0 0 0.25rem 0" }}>
+                    <strong>{line.skuCode}</strong> — Solicitado: {line.requestedWidthM} x {line.requestedHeightM} m
+                  </p>
+                  <table className="data-table">
+                    <thead>
+                      <tr><th>Etiqueta</th><th>Medida retazo</th><th>Excedente m²</th><th>Ubicacion</th><th>Estado</th><th>Accion</th></tr>
+                    </thead>
+                    <tbody>
+                      {line.suggestions.map((s) => {
+                        const hold = softHolds[s.scrapId];
+                        const isHeld = hold?.active;
+                        const holdExpiry = hold?.expiresAt ? new Date(hold.expiresAt).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" }) : null;
+                        return (
+                        <tr key={s.scrapId}>
+                          <td>{s.labelCode ?? s.scrapId.slice(0, 8)}</td>
+                          <td>{s.widthM} x {s.heightM}</td>
+                          <td>{s.excessAreaM2?.toFixed(3) ?? "—"}</td>
+                          <td><strong>{s.locationCode ?? "—"}</strong></td>
+                          <td>
+                            {isHeld ? (
+                              <span style={{ color: "var(--warning, #e67e22)", fontSize: "0.85em" }}>
+                                Reservado por {hold.heldBy?.fullName ?? "—"} hasta {holdExpiry}
+                              </span>
+                            ) : (
+                              <span style={{ color: "var(--ok, green)", fontSize: "0.85em" }}>Disponible</span>
+                            )}
+                          </td>
+                          <td style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap" }}>
+                            <Button
+                              variant="secondary"
+                              onClick={() => void handleAllocateFromOffer(offerPreviewResult.saleId, line.saleLineId, s.scrapId)}
+                              disabled={!!loadingActionId}
+                            >
+                              {loadingActionId === s.scrapId ? <Spinner size="sm" /> : "Usar"}
+                            </Button>
+                            {softHoldPolicy?.enabled && !isHeld && (
+                              <Button
+                                variant="secondary"
+                                onClick={() => void handleCreateSoftHold(s.scrapId, offerPreviewResult.saleId, line.saleLineId)}
+                                disabled={!!loadingActionId}
+                              >
+                                {loadingActionId === `hold-${s.scrapId}` ? <Spinner size="sm" /> : "Reservar"}
+                              </Button>
+                            )}
+                            {isHeld && (
+                              <>
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => void handleAllocateFromOffer(offerPreviewResult.saleId, line.saleLineId, s.scrapId)}
+                                  disabled={!!loadingActionId}
+                                >
+                                  Confirmar uso
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => void handleReleaseSoftHold(s.scrapId)}
+                                  disabled={!!loadingActionId}
+                                >
+                                  {loadingActionId === `release-${s.scrapId}` ? <Spinner size="sm" /> : "Liberar"}
+                                </Button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null
+            ))}
+            <div className="inline-actions">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  const items = offerPreviewResult.lines.flatMap((l) =>
+                    l.suggestions.slice(0, 1).map((s) => ({ saleLineId: l.saleLineId, scrapId: s.scrapId }))
+                  );
+                  void handleGeneratePickList(offerPreviewResult.saleId, items);
+                }}
+              >
+                Generar lista para buscar
+              </Button>
+              <Button variant="secondary" onClick={() => setActiveModal(null)}>Seguir con corte nuevo</Button>
+            </div>
+          </>
+        ) : (
+          <p className="status-note">Sin opciones ya cortadas disponibles.</p>
+        )}
       </Dialog>
 
       {/* BUG-6: Label preview modal */}

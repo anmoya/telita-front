@@ -39,8 +39,6 @@ export async function fetchStatusLabels(apiUrl: string): Promise<StatusLabelsByE
   const response = await fetch(`${apiUrl}/status-labels`);
   
   if (!response.ok) {
-    console.error(`Failed to fetch status labels: HTTP ${response.status}`);
-    // Return empty structure on error to prevent UI breakage
     return { sale: [], cut_job: [], scrap: [] };
   }
 

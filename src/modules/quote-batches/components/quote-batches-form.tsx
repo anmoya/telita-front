@@ -68,6 +68,9 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate }: Props) {
   const [status, setStatus] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterCustomer, setFilterCustomer] = useState("");
+  const [filterReference, setFilterReference] = useState("");
+  const [filterFrom, setFilterFrom] = useState("");
+  const [filterTo, setFilterTo] = useState("");
   const [page, setPage] = useState(1);
 
   const [detailBatch, setDetailBatch] = useState<QuoteBatch | null>(null);
@@ -86,11 +89,14 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate }: Props) {
       const params = new URLSearchParams({ branchCode: "MAIN" });
       if (filterStatus) params.set("status", filterStatus);
       if (filterCustomer) params.set("customerName", filterCustomer);
+      if (filterReference) params.set("customerReference", filterReference);
+      if (filterFrom) params.set("from", filterFrom);
+      if (filterTo) params.set("to", filterTo);
       params.set("page", String(page));
       params.set("limit", "8");
       return api.get<PagedQuoteBatches>(`/quotes/batch?${params}`);
     },
-    [api, filterStatus, filterCustomer, page]
+    [api, filterStatus, filterCustomer, filterReference, filterFrom, filterTo, page]
   );
 
   const batches = batchesData?.data ?? [];
@@ -99,7 +105,7 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate }: Props) {
 
   useEffect(() => {
     setPage(1);
-  }, [filterStatus, filterCustomer]);
+  }, [filterStatus, filterCustomer, filterReference, filterFrom, filterTo]);
 
   useEffect(() => {
     if (batches.length === 0) {
@@ -203,14 +209,50 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate }: Props) {
                 <label className="field">
                   <span>Cliente</span>
                   <Input
-                    placeholder="Nombre o referencia"
+                    placeholder="Nombre del cliente"
                     value={filterCustomer}
                     onChange={(e) => setFilterCustomer(e.target.value)}
                   />
                 </label>
-                <div className="ti-section__actions">
+                <label className="field">
+                  <span>Referencia</span>
+                  <Input
+                    placeholder="Obra o referencia"
+                    value={filterReference}
+                    onChange={(e) => setFilterReference(e.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>Desde</span>
+                  <Input
+                    type="date"
+                    value={filterFrom}
+                    onChange={(e) => setFilterFrom(e.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>Hasta</span>
+                  <Input
+                    type="date"
+                    value={filterTo}
+                    onChange={(e) => setFilterTo(e.target.value)}
+                  />
+                </label>
+                <div className="ti-section__actions" style={{ display: "flex", gap: "0.5rem" }}>
                   <Button variant="secondary" onClick={() => void refetchBatches()} disabled={loading}>
-                    {loading ? <Spinner size="sm" /> : "Refrescar"}
+                    {loading ? <Spinner size="sm" /> : "Buscar"}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setFilterStatus("");
+                      setFilterCustomer("");
+                      setFilterReference("");
+                      setFilterFrom("");
+                      setFilterTo("");
+                    }}
+                  >
+                    Limpiar
                   </Button>
                 </div>
               </div>
@@ -280,7 +322,7 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate }: Props) {
         }
       >
         <WorkbenchSection
-          title="Historial de cotizaciones"
+          title={`Historial de cotizaciones (${totalBatches})`}
           className="ti-quote-batches-list-section"
           actions={(
             <>

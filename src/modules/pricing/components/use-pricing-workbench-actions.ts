@@ -339,7 +339,8 @@ export function usePricingWorkbenchActions({
             requestedHeightM: Number(item.heightM),
             quantity: Number(item.quantity),
             description: item.description || item.skuCode || "",
-            categoryName: item.categoryName || undefined
+            categoryName: item.categoryName || undefined,
+            roomAreaName: item.roomAreaName || undefined
           }))
         })
       });

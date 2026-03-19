@@ -493,6 +493,7 @@ export function SalesWorkbench({
                   <tr>
                     <th>#</th>
                     <th>SKU</th>
+                    <th>Agrupador</th>
                     <th>Categoria</th>
                     <th>Cant.</th>
                     <th>Ancho</th>
@@ -533,6 +534,7 @@ export function SalesWorkbench({
                               </div>
                             )}
                           </td>
+                          <td>{line.roomAreaName ?? "—"}</td>
                           <td>
                             {isDraftEditable && draft ? (
                               <Select

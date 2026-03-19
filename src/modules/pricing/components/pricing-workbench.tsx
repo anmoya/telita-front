@@ -303,6 +303,7 @@ export function PricingWorkbench({
               <tr>
                 <th>Orden</th>
                 <th>SKU / Producto</th>
+                <th>Agrupador</th>
                 <th>Categoria</th>
                 <th>Cantidad</th>
                 <th>Ancho / Alto</th>
@@ -356,6 +357,16 @@ export function PricingWorkbench({
                         ))}
                       </Select>
                     </div>
+                  </td>
+                  <td>
+                    <Input
+                      value={item.roomAreaName ?? ""}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => onUpdateQuoteItem(item.id, { roomAreaName: e.target.value })}
+                      placeholder="Ej: Living, Dormitorio"
+                      style={{ width: "150px", fontSize: "0.82em" }}
+                      list="agrupador-suggestions"
+                    />
                   </td>
                   <td>
                     <div className="ti-quote-line-description">
@@ -487,6 +498,11 @@ export function PricingWorkbench({
               ))}
             </tbody>
           </DataTable>
+          <datalist id="agrupador-suggestions">
+            {[...new Set(quoteItems.map((i) => i.roomAreaName).filter(Boolean))].map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
         </WorkbenchSection>
 
         {status ? <p className="status-note" style={{ marginTop: 0 }}>{status}</p> : null}

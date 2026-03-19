@@ -102,6 +102,7 @@ export type PreviewLine = {
   skuCode: string;
   description: string;
   categoryName: string | null;
+  roomAreaName: string | null;
   requestedWidthM: number;
   requestedHeightM: number;
   quantity: number;

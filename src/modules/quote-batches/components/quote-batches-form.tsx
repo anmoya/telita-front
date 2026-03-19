@@ -45,6 +45,9 @@ type QuoteBatch = {
   subtotalAmount: number;
   taxAmount: number;
   totalAmount: number;
+  amountPaid: number;
+  balanceDue: number;
+  amountPaidPct: number;
   createdAt: string;
   createdBy: string;
   lines: BatchLine[];
@@ -54,6 +57,7 @@ type Props = {
   accessToken: string;
   apiUrl: string;
   onNavigate: (menu: MenuKey) => void;
+  onEditBatch?: (batchId: string) => void;
 };
 
 type PagedQuoteBatches = {
@@ -64,7 +68,7 @@ type PagedQuoteBatches = {
   totalPages: number;
 };
 
-export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate }: Props) {
+export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch }: Props) {
   const [status, setStatus] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterCustomer, setFilterCustomer] = useState("");
@@ -155,6 +159,7 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate }: Props) {
           priceListName: batch.priceListName,
           customerName: batch.customerName ?? undefined,
           customerReference: batch.customerReference ?? undefined,
+          amountPaid: batch.amountPaid > 0 ? batch.amountPaid : undefined,
           items: batch.lines.map((l) => ({
             skuCode: l.skuCode,
             requestedWidthM: l.requestedWidthM,
@@ -288,6 +293,18 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate }: Props) {
                       <span>Total</span>
                       <strong>${Math.round(selectedBatch.totalAmount).toLocaleString()}</strong>
                     </div>
+                    {selectedBatch.amountPaid > 0 ? (
+                      <>
+                        <div className="ti-sales-summary__row">
+                          <span>Abonado</span>
+                          <strong>${Math.round(selectedBatch.amountPaid).toLocaleString()} ({selectedBatch.amountPaidPct}%)</strong>
+                        </div>
+                        <div className="ti-sales-summary__row">
+                          <span>Saldo</span>
+                          <strong style={{ color: "var(--warning)" }}>${Math.round(selectedBatch.balanceDue).toLocaleString()}</strong>
+                        </div>
+                      </>
+                    ) : null}
                     <div className="ti-sales-summary__row">
                       <span>Creada</span>
                       <strong>{formatLocalDateTime(selectedBatch.createdAt)}</strong>
@@ -295,6 +312,11 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate }: Props) {
                   </div>
 
                   <div className="ti-section__actions">
+                    {selectedBatch.status === "DRAFT" && onEditBatch ? (
+                      <Button variant="primary" onClick={() => onEditBatch(selectedBatch.id)}>
+                        Editar
+                      </Button>
+                    ) : null}
                     <Button variant="secondary" onClick={() => openDetail(selectedBatch)}>
                       Ver detalle
                     </Button>
@@ -380,6 +402,17 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate }: Props) {
                       </td>
                       <td>
                         <div className="actions-cell">
+                          {batch.status === "DRAFT" && onEditBatch ? (
+                            <Button
+                              variant="primary"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onEditBatch(batch.id);
+                              }}
+                            >
+                              Editar
+                            </Button>
+                          ) : null}
                           <Button
                             variant="secondary"
                             onClick={(event) => {
@@ -488,6 +521,15 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate }: Props) {
               <div>Subtotal: <strong>${detailBatch.subtotalAmount.toLocaleString()}</strong></div>
               <div>IVA (19%): <strong>${Math.round(detailBatch.taxAmount).toLocaleString()}</strong></div>
               <div>Total: <strong>${Math.round(detailBatch.totalAmount).toLocaleString()} CLP</strong></div>
+              {detailBatch.amountPaid > 0 ? (
+                <>
+                  <div style={{ borderTop: "1px solid var(--border)", marginTop: "0.25rem", paddingTop: "0.25rem" }}>
+                    Abonado: <strong>${Math.round(detailBatch.amountPaid).toLocaleString()}</strong>
+                    <span style={{ color: "var(--muted)", marginLeft: "0.25rem" }}>({detailBatch.amountPaidPct}%)</span>
+                  </div>
+                  <div>Saldo: <strong style={{ color: "var(--warning)" }}>${Math.round(detailBatch.balanceDue).toLocaleString()}</strong></div>
+                </>
+              ) : null}
             </div>
 
             <ModalActions style={{ marginTop: "1rem", justifyContent: "flex-start" }}>

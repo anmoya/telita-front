@@ -9,6 +9,7 @@ type QuotePreviewDialogProps = {
   open: boolean;
   previewMode: "CUSTOMER" | "INTERNAL";
   previewData: PreviewResult | null;
+  amountPaid?: number;
   onClose: () => void;
   onSwitchMode: (mode: "CUSTOMER" | "INTERNAL") => void;
 };
@@ -37,6 +38,7 @@ export function QuotePreviewDialog({
   open,
   previewMode,
   previewData,
+  amountPaid = 0,
   onClose,
   onSwitchMode
 }: QuotePreviewDialogProps) {
@@ -49,14 +51,9 @@ export function QuotePreviewDialog({
   const colCount = 6 + (previewMode === "INTERNAL" ? 2 : 0);
 
   return (
-    <Dialog open={open} onClose={onClose} title="Vista previa de cotización">
-      <div className="dialog-header">
-        <span className="dialog-title">Vista previa — {previewMode === "CUSTOMER" ? "Cliente" : "Interna"}</span>
-        <button className="dialog-close" onClick={onClose}>✕</button>
-      </div>
-      <div className="dialog-body">
+    <Dialog open={open} onClose={onClose} title={`Vista previa — ${previewMode === "CUSTOMER" ? "Cliente" : "Interna"}`} panelClassName="dialog-panel--wide">
         {previewData ? (
-          <div id="quote-preview-printable" style={{ fontFamily: "sans-serif", fontSize: "0.9em", lineHeight: "1.6" }}>
+          <div id="quote-preview-printable" style={{ fontFamily: "sans-serif", fontSize: "0.9em", lineHeight: "1.6", overflowX: "auto" }}>
             <div style={{ marginBottom: "1rem", borderBottom: "2px solid #333", paddingBottom: "0.5rem" }}>
               <div style={{ fontWeight: 700, fontSize: "1.1em" }}>{previewData.header.branchName}</div>
               <div style={{ color: "var(--muted)", fontSize: "0.85em" }}>
@@ -72,7 +69,7 @@ export function QuotePreviewDialog({
               </div>
             ) : null}
 
-            <table className="data-table" style={{ fontSize: "0.85em", marginBottom: "0.75rem" }}>
+            <table className="data-table" style={{ fontSize: "0.85em", marginBottom: "0.75rem", width: "100%", tableLayout: "auto" }}>
               <thead>
                 <tr>
                   <th>#</th>
@@ -121,20 +118,35 @@ export function QuotePreviewDialog({
               <div style={{ fontSize: "1.05em", fontWeight: 700 }}>
                 Total: ${Math.round(previewData.totals.total).toLocaleString()} {previewData.totals.currencyCode}
               </div>
+              {amountPaid > 0 ? (
+                <>
+                  <div style={{ borderTop: "1px solid var(--border)", marginTop: "0.25rem", paddingTop: "0.25rem" }}>
+                    Abonado: <strong>${Math.round(amountPaid).toLocaleString()}</strong>
+                    <span style={{ color: "var(--muted)", marginLeft: "0.25rem" }}>
+                      ({((amountPaid / previewData.totals.total) * 100).toFixed(1)}%)
+                    </span>
+                  </div>
+                  <div style={{ fontWeight: 700 }}>
+                    Saldo: ${Math.round(Math.max(previewData.totals.total - amountPaid, 0)).toLocaleString()}
+                  </div>
+                </>
+              ) : null}
             </div>
 
-            <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              <Button variant="primary" onClick={() => window.print()}>Imprimir</Button>
-              {previewMode === "CUSTOMER" ? (
+            {previewMode === "CUSTOMER" ? (
+              <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <Button variant="primary" onClick={() => window.print()}>Imprimir</Button>
                 <Button variant="secondary" onClick={() => onSwitchMode("INTERNAL")}>Ver vista interna</Button>
-              ) : (
+                <Button variant="secondary" onClick={onClose}>Cerrar</Button>
+              </div>
+            ) : (
+              <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                 <Button variant="secondary" onClick={() => onSwitchMode("CUSTOMER")}>Ver vista cliente</Button>
-              )}
-              <Button variant="secondary" onClick={onClose}>Cerrar</Button>
-            </div>
+                <Button variant="secondary" onClick={onClose}>Cerrar</Button>
+              </div>
+            )}
           </div>
         ) : null}
-      </div>
     </Dialog>
   );
 }

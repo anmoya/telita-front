@@ -1167,7 +1167,7 @@ body {
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(34, 32, 26, 0.55);
+  background: rgba(34, 32, 26, 0.7);
   display: grid;
   place-items: center;
   z-index: 100;
@@ -1182,6 +1182,12 @@ body {
   width: min(480px, 100%);
   display: grid;
   gap: 0;
+}
+
+.dialog-panel--wide {
+  width: min(860px, 95%);
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 .dialog-header {

@@ -27,6 +27,8 @@ type UsePricingWorkbenchSupportArgs = {
   setPriceListOptions: (value: Array<{ name: string; isActive: boolean }>) => void;
   setSelectedPriceListName: (value: string) => void;
   setCustomers: (value: CustomerOption[]) => void;
+  setQuoteAmountPaid: (value: number) => void;
+  setQuoteBatchId: (value: string | null) => void;
 };
 
 export function usePricingWorkbenchSupport({
@@ -51,7 +53,9 @@ export function usePricingWorkbenchSupport({
   setSkuOptions,
   setPriceListOptions,
   setSelectedPriceListName,
-  setCustomers
+  setCustomers,
+  setQuoteAmountPaid,
+  setQuoteBatchId
 }: UsePricingWorkbenchSupportArgs) {
   function addQuoteItem() {
     setQuoteItems((current) => [
@@ -108,6 +112,8 @@ export function usePricingWorkbenchSupport({
     setQuoteCustomerId("");
     setQuoteManualDiscountPct("0");
     setQuoteManualDiscountReason("");
+    setQuoteAmountPaid(0);
+    setQuoteBatchId(null);
     setActiveQuoteItemId(null);
     setQuoteItemMatches([]);
     setQuoteItemMatchesStatus("");
@@ -212,6 +218,67 @@ export function usePricingWorkbenchSupport({
     }
   }
 
+  async function loadQuoteBatch(batchId: string) {
+    try {
+      const response = await authedFetch(`${apiUrl}/quotes/batch/${batchId}`);
+      if (!response.ok) {
+        setStatus("Error al cargar cotización.");
+        return;
+      }
+      const batch = await response.json() as {
+        id: string;
+        priceListName: string;
+        customerName: string | null;
+        customerReference: string | null;
+        amountPaid: number;
+        lines: Array<{
+          skuCode: string;
+          requestedWidthM: number;
+          requestedHeightM: number;
+          quantity: number;
+          unitPrice: number;
+          lineSubtotal: number;
+          priceMethod: string;
+          categoryId: string | null;
+          categoryName: string | null;
+          lineNote: string | null;
+          roomAreaName?: string | null;
+          displayOrder: number;
+        }>;
+      };
+
+      setQuoteBatchId(batch.id);
+      setSelectedPriceListName(batch.priceListName);
+      setQuoteCustomerName(batch.customerName ?? "");
+      setQuoteCustomerReference(batch.customerReference ?? "");
+      setQuoteAmountPaid(batch.amountPaid ?? 0);
+      setQuoteManualDiscountPct("0");
+      setQuoteManualDiscountReason("");
+      setQuoteItems(
+        batch.lines
+          .sort((a, b) => a.displayOrder - b.displayOrder)
+          .map((l) => ({
+            id: crypto.randomUUID(),
+            widthM: String(l.requestedWidthM),
+            heightM: String(l.requestedHeightM),
+            quantity: String(l.quantity),
+            skuCode: l.skuCode,
+            unitPrice: l.unitPrice,
+            subtotal: l.lineSubtotal,
+            priceMethod: l.priceMethod,
+            calcStatus: "ok" as const,
+            categoryId: l.categoryId ?? undefined,
+            categoryName: l.categoryName ?? undefined,
+            lineNote: l.lineNote ?? undefined,
+            roomAreaName: l.roomAreaName ?? undefined
+          }))
+      );
+      setStatus(`Editando borrador cargado.`);
+    } catch {
+      setStatus("Error al cargar cotización.");
+    }
+  }
+
   return {
     addQuoteItem,
     removeQuoteItem,
@@ -223,6 +290,7 @@ export function usePricingWorkbenchSupport({
     handleCreateCategoryForItem,
     loadSelectorsData,
     loadCustomers,
-    applyQuoteCustomerSelection
+    applyQuoteCustomerSelection,
+    loadQuoteBatch
   };
 }

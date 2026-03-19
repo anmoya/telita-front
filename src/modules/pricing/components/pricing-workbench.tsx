@@ -60,6 +60,9 @@ type PricingWorkbenchProps = {
   operatorMargin: number;
   quoteTax: number;
   quoteTotal: number;
+  quoteAmountPaid: number;
+  onQuoteAmountPaidChange: (value: number) => void;
+  quoteBatchId: string | null;
   pricingDocumentStatus: string;
   pricingDocumentTone: "success" | "draft";
   selectedPriceListName: string;
@@ -117,6 +120,9 @@ export function PricingWorkbench({
   operatorMargin,
   quoteTax,
   quoteTotal,
+  quoteAmountPaid,
+  onQuoteAmountPaidChange,
+  quoteBatchId,
   pricingDocumentStatus,
   pricingDocumentTone,
   selectedPriceListName,
@@ -182,16 +188,48 @@ export function PricingWorkbench({
                   Total bloqueado: corrige los items con error antes de cerrar la cotizacion.
                 </p>
               ) : (
-                <TotalsSummary
-                  rows={[
-                    { label: "Subtotal", value: `$${Math.round(quoteSubtotal).toLocaleString()}` },
-                    { label: "Ajuste operador", value: operatorMargin > 0 ? `${operatorMargin}%` : "—", tone: "muted" },
-                    { label: "Impuesto (19%)", value: `$${quoteTax.toLocaleString()}` }
-                  ]}
-                  totalLabel="Total"
-                  totalValue={`$${quoteTotal.toLocaleString()}`}
-                  note={operatorMargin > 0 ? "Total ajustado con margen operador. No se persiste en BD." : "Totales listos para crear venta draft."}
-                />
+                <>
+                  <TotalsSummary
+                    rows={[
+                      { label: "Subtotal", value: `$${Math.round(quoteSubtotal).toLocaleString()}` },
+                      { label: "Ajuste operador", value: operatorMargin > 0 ? `${operatorMargin}%` : "—", tone: "muted" },
+                      { label: "Impuesto (19%)", value: `$${quoteTax.toLocaleString()}` }
+                    ]}
+                    totalLabel="Total"
+                    totalValue={`$${quoteTotal.toLocaleString()}`}
+                    note={operatorMargin > 0 ? "Total ajustado con margen operador. No se persiste en BD." : undefined}
+                  />
+                  <div style={{ marginTop: "0.75rem", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
+                    <label className="ti-field-label" style={{ display: "block", marginBottom: "0.25rem" }}>Abono del cliente</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={quoteTotal}
+                        value={quoteAmountPaid || ""}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          if (!isNaN(v) && v >= 0 && v <= quoteTotal) onQuoteAmountPaidChange(v);
+                          else if (e.target.value === "") onQuoteAmountPaidChange(0);
+                        }}
+                        style={{ maxWidth: "10rem" }}
+                      />
+                      {quoteAmountPaid > 0 && quoteTotal > 0 ? (
+                        <span style={{ fontSize: "0.85em", color: "var(--muted)" }}>
+                          ({((quoteAmountPaid / quoteTotal) * 100).toFixed(1)}%)
+                        </span>
+                      ) : null}
+                    </div>
+                    <div style={{ marginTop: "0.5rem", fontSize: "0.9em" }}>
+                      <strong>Saldo por pagar: </strong>
+                      {quoteAmountPaid > 0
+                        ? <span style={{ color: "var(--warning)" }}>${Math.round(Math.max(quoteTotal - quoteAmountPaid, 0)).toLocaleString()}</span>
+                        : <span style={{ color: "var(--muted)" }}>Sin abono</span>
+                      }
+                    </div>
+                  </div>
+                </>
               )}
             </WorkbenchSection>
           </>
@@ -512,13 +550,19 @@ export function PricingWorkbench({
       <ActionFooter
         className="ti-pricing-footer"
         left={
-          <Button variant="secondary" onClick={onResetQuoteWorkbench}>
-            Reiniciar
+          <Button variant="secondary" onClick={() => {
+            if (quoteBatchId) {
+              if (!confirm("Vas a descartar los cambios del borrador. ¿Continuar?")) return;
+            }
+            onResetQuoteWorkbench();
+          }}>
+            {quoteBatchId ? "Nuevo" : "Reiniciar"}
           </Button>
         }
         summary={
           <div className="ti-pricing-footer-summary">
             <StatusPill tone={pricingDocumentTone}>{pricingDocumentStatus}</StatusPill>
+            {quoteBatchId ? <StatusPill tone="warning">Editando borrador</StatusPill> : null}
             <span className="ti-pricing-footer-summary__meta">{selectedPriceListName || "Sin lista"}</span>
             <span className="ti-pricing-footer-summary__meta">({quoteItems.length} lineas)</span>
           </div>
@@ -531,7 +575,7 @@ export function PricingWorkbench({
               disabled={loadingBatch || !selectedPriceListName || !quoteReady}
               title="Guarda la cotización en el historial sin crear venta"
             >
-              Guardar cotización
+              {quoteBatchId ? "Guardar cambios" : "Guardar cotización"}
             </Button>
             <Button
               variant="secondary"

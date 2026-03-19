@@ -63,6 +63,7 @@ export default function HomePage() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [activeMenu, setActiveMenu] = useState<MenuKey>("dashboard");
+  const [editingBatchId, setEditingBatchId] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
 
   useEffect(() => {
@@ -263,6 +264,7 @@ export default function HomePage() {
               accessToken={accessToken}
               apiUrl={apiUrl}
               onNavigate={setActiveMenu}
+              onEditBatch={(batchId) => { setEditingBatchId(batchId); setActiveMenu("pricing"); }}
             />
           )}
           {activeMenu === "clientes" && tokenInfo && (
@@ -273,7 +275,13 @@ export default function HomePage() {
             />
           )}
           {activeMenu !== "catalogo" && activeMenu !== "usuarios" && activeMenu !== "perfil" && activeMenu !== "listas-precios" && activeMenu !== "ubicaciones" && activeMenu !== "categorias-cotizacion" && activeMenu !== "historial-cotizaciones" && activeMenu !== "clientes" && (
-            <QuoteForm accessToken={accessToken} activeMenu={activeMenu} onNavigate={setActiveMenu} />
+            <QuoteForm
+              accessToken={accessToken}
+              activeMenu={activeMenu}
+              onNavigate={setActiveMenu}
+              editingBatchId={editingBatchId}
+              onClearEditingBatch={() => setEditingBatchId(null)}
+            />
           )}
         </div>
       </section>

@@ -15,6 +15,9 @@ type UsePricingWorkbenchActionsArgs = {
   quoteManualDiscountPct: string;
   quoteManualDiscountReason: string;
   quoteSubtotal: number;
+  quoteAmountPaid: number;
+  quoteBatchId: string | null;
+  setQuoteBatchId: (value: string | null) => void;
   setActiveQuoteItemId: (value: string | null) => void;
   setQuoteItemMatches: (value: QuoteScrapOpportunityRow[]) => void;
   setQuoteItemMatchesStatus: (value: string) => void;
@@ -43,6 +46,9 @@ export function usePricingWorkbenchActions({
   quoteManualDiscountPct,
   quoteManualDiscountReason,
   quoteSubtotal,
+  quoteAmountPaid,
+  quoteBatchId,
+  setQuoteBatchId,
   setActiveQuoteItemId,
   setQuoteItemMatches,
   setQuoteItemMatchesStatus,
@@ -254,6 +260,7 @@ export function usePricingWorkbenchActions({
           customerReference: quoteCustomerReference || undefined,
           manualDiscountPct: Number(quoteManualDiscountPct || 0) || undefined,
           manualDiscountReason: quoteManualDiscountReason || undefined,
+          amountPaid: quoteAmountPaid > 0 ? quoteAmountPaid : undefined,
           items: quoteItems.map((item, idx) => ({
             skuCode: item.skuCode ?? "",
             requestedWidthM: Number(item.widthM),
@@ -287,6 +294,7 @@ export function usePricingWorkbenchActions({
           customerId: quoteCustomerId || undefined,
           customerName: quoteCustomerName || undefined,
           customerReference: quoteCustomerReference || undefined,
+          amountPaid: quoteAmountPaid > 0 ? quoteAmountPaid : undefined,
           lines: quoteItems.map((item, idx) => ({
             skuCode: item.skuCode ?? "",
             requestedWidthM: Number(item.widthM),
@@ -362,33 +370,37 @@ export function usePricingWorkbenchActions({
 
   async function handleSaveToHistory() {
     if (!selectedPriceListName) return;
+    const isUpdate = Boolean(quoteBatchId);
+    const url = isUpdate ? `${apiUrl}/quotes/batch/${quoteBatchId}` : `${apiUrl}/quotes/batch`;
+    const method = isUpdate ? "PATCH" : "POST";
+
+    const lines = quoteItems.map((item, idx) => ({
+      skuCode: item.skuCode ?? "",
+      requestedWidthM: Number(item.widthM),
+      requestedHeightM: Number(item.heightM),
+      quantity: Number(item.quantity),
+      unitPrice: item.unitPrice ?? 0,
+      lineSubtotal: item.subtotal ?? 0,
+      priceMethod: item.priceMethod ?? "LINEAR_METER",
+      roomAreaName: item.roomAreaName || undefined,
+      categoryId: item.categoryId || undefined,
+      categoryName: !item.categoryId && item.categoryName ? item.categoryName : undefined,
+      lineNote: item.lineNote || undefined,
+      displayOrder: idx
+    }));
+
+    const payload = isUpdate
+      ? { customerName: quoteCustomerName || undefined, customerReference: quoteCustomerReference || undefined, amountPaid: quoteAmountPaid > 0 ? quoteAmountPaid : 0, lines }
+      : { branchCode: "MAIN", priceListName: selectedPriceListName, customerId: quoteCustomerId || undefined, customerName: quoteCustomerName || undefined, customerReference: quoteCustomerReference || undefined, amountPaid: quoteAmountPaid > 0 ? quoteAmountPaid : undefined, lines };
+
     try {
-      const response = await authedFetch(`${apiUrl}/quotes/batch`, {
-        method: "POST",
-        body: JSON.stringify({
-          branchCode: "MAIN",
-          priceListName: selectedPriceListName,
-          customerId: quoteCustomerId || undefined,
-          customerName: quoteCustomerName || undefined,
-          customerReference: quoteCustomerReference || undefined,
-          lines: quoteItems.map((item, idx) => ({
-            skuCode: item.skuCode ?? "",
-            requestedWidthM: Number(item.widthM),
-            requestedHeightM: Number(item.heightM),
-            quantity: Number(item.quantity),
-            unitPrice: item.unitPrice ?? 0,
-            lineSubtotal: item.subtotal ?? 0,
-            priceMethod: item.priceMethod ?? "LINEAR_METER",
-            roomAreaName: item.roomAreaName || undefined,
-            categoryId: item.categoryId || undefined,
-            categoryName: !item.categoryId && item.categoryName ? item.categoryName : undefined,
-            lineNote: item.lineNote || undefined,
-            displayOrder: idx
-          }))
-        })
-      });
+      const response = await authedFetch(url, { method, body: JSON.stringify(payload) });
       if (response.ok) {
-        setStatus("Cotización guardada en historial.");
+        if (!isUpdate) {
+          const data = await response.json() as { id?: string };
+          if (data.id) setQuoteBatchId(data.id);
+        }
+        setStatus(isUpdate ? "Cotización actualizada." : "Cotización guardada en historial.");
         await onRefreshQuotes();
       } else {
         setStatus("Error al guardar en historial.");

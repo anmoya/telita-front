@@ -38,9 +38,11 @@ type QuoteFormProps = {
   accessToken: string;
   activeMenu: MenuKey;
   onNavigate: (menu: MenuKey) => void;
+  editingBatchId?: string | null;
+  onClearEditingBatch?: () => void;
 };
 
-export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProps) {
+export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId, onClearEditingBatch }: QuoteFormProps) {
   const apiUrl = process.env.NEXT_PUBLIC_TELITA_API_URL ?? "http://localhost:3001/v1";
 
   // SPEC-32: Selectores dinámicos
@@ -80,6 +82,12 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
 
   // SPEC-32: Operator margin (no persistido en BD)
   const [operatorMargin, setOperatorMargin] = useState(0);
+
+  // MVP-05: Abono del cliente
+  const [quoteAmountPaid, setQuoteAmountPaid] = useState(0);
+
+  // MVP-04.1: Modo edición de borrador
+  const [quoteBatchId, setQuoteBatchId] = useState<string | null>(null);
 
   const [status, setStatus] = useState<string>("");
   const [scrapStatus, setScrapStatus] = useState<string>("");
@@ -148,7 +156,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     setSkuOptions,
     setPriceListOptions,
     setSelectedPriceListName,
-    setCustomers
+    setCustomers,
+    setQuoteAmountPaid,
+    setQuoteBatchId
   });
   const pricingActions = usePricingWorkbenchActions({
     apiUrl,
@@ -161,6 +171,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     quoteManualDiscountPct,
     quoteManualDiscountReason,
     quoteSubtotal: quoteSubtotalForActions,
+    quoteAmountPaid,
+    quoteBatchId,
+    setQuoteBatchId,
     setActiveQuoteItemId,
     setQuoteItemMatches,
     setQuoteItemMatchesStatus,
@@ -237,6 +250,14 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
     }
   }, [activeMenu, cutFilterStatus, cutsWorkbench.cutPage]);
 
+  // MVP-04.1: Cargar borrador cuando se navega desde historial
+  useEffect(() => {
+    if (editingBatchId && activeMenu === "pricing") {
+      void pricingSupport.loadQuoteBatch(editingBatchId);
+      onClearEditingBatch?.();
+    }
+  }, [editingBatchId, activeMenu]);
+
   const {
     activeQuoteItem,
     activeQuoteItemOpportunities,
@@ -286,6 +307,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
           operatorMargin={operatorMargin}
           quoteTax={quoteTax}
           quoteTotal={quoteTotal}
+          quoteAmountPaid={quoteAmountPaid}
+          onQuoteAmountPaidChange={setQuoteAmountPaid}
+          quoteBatchId={quoteBatchId}
           pricingDocumentStatus={pricingDocumentStatus}
           pricingDocumentTone={pricingDocumentTone}
           selectedPriceListName={selectedPriceListName}
@@ -470,6 +494,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate }: QuoteFormProp
         open={previewOpen}
         previewMode={previewMode}
         previewData={previewData}
+        amountPaid={quoteAmountPaid}
         onClose={() => setPreviewOpen(false)}
         onSwitchMode={(mode) => { void pricingActions.handlePreview(mode); }}
       />

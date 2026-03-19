@@ -71,6 +71,7 @@ type PricingWorkbenchProps = {
   quoteCustomerId: string;
   quoteCustomerReference: string;
   quoteCustomerName: string;
+  customerDiscountInfo: { text: string; pct: number };
   priceListOptions: PriceListOption[];
   quoteManualDiscountPct: string;
   quoteManualDiscountReason: string;
@@ -131,6 +132,7 @@ export function PricingWorkbench({
   quoteCustomerId,
   quoteCustomerReference,
   quoteCustomerName,
+  customerDiscountInfo,
   priceListOptions,
   quoteManualDiscountPct,
   quoteManualDiscountReason,
@@ -189,16 +191,34 @@ export function PricingWorkbench({
                 </p>
               ) : (
                 <>
-                  <TotalsSummary
-                    rows={[
+                  {(() => {
+                    const discPct = customerDiscountInfo.pct;
+                    const discountAmount = discPct > 0 ? Math.round(quoteSubtotal * discPct / 100) : 0;
+                    const subtotalAfterDiscount = quoteSubtotal - discountAmount;
+                    const taxAfterDiscount = Math.round(subtotalAfterDiscount * 0.19);
+                    const totalAfterDiscount = Math.round(subtotalAfterDiscount + taxAfterDiscount);
+                    const showDiscount = discPct > 0;
+
+                    const rows = [
                       { label: "Subtotal", value: `$${Math.round(quoteSubtotal).toLocaleString()}` },
-                      { label: "Ajuste operador", value: operatorMargin > 0 ? `${operatorMargin}%` : "—", tone: "muted" },
-                      { label: "Impuesto (19%)", value: `$${quoteTax.toLocaleString()}` }
-                    ]}
-                    totalLabel="Total"
-                    totalValue={`$${quoteTotal.toLocaleString()}`}
-                    note={operatorMargin > 0 ? "Total ajustado con margen operador. No se persiste en BD." : undefined}
-                  />
+                      { label: "Ajuste operador", value: operatorMargin > 0 ? `${operatorMargin}%` : "—", tone: "muted" as const },
+                      ...(showDiscount ? [{ label: `Descuento cliente (${discPct}%)`, value: `-$${discountAmount.toLocaleString()}`, tone: "success" as const }] : []),
+                      { label: "Impuesto (19%)", value: `$${(showDiscount ? taxAfterDiscount : quoteTax).toLocaleString()}` }
+                    ];
+
+                    return (
+                      <TotalsSummary
+                        rows={rows}
+                        totalLabel="Total"
+                        totalValue={`$${(showDiscount ? totalAfterDiscount : quoteTotal).toLocaleString()}`}
+                        note={
+                          showDiscount
+                            ? "Total estimado con descuento del cliente. El descuento definitivo se aplica al crear la venta."
+                            : operatorMargin > 0 ? "Total ajustado con margen operador. No se persiste en BD." : undefined
+                        }
+                      />
+                    );
+                  })()}
                   <div style={{ marginTop: "0.75rem", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
                     <label className="ti-field-label" style={{ display: "block", marginBottom: "0.25rem" }}>Abono del cliente</label>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -251,6 +271,11 @@ export function PricingWorkbench({
                 const sel = customers.find((c) => c.id === quoteCustomerId);
                 return sel?.rut ? <span className="ti-field-note">RUT: {sel.rut}</span> : null;
               })()}
+              {customerDiscountInfo.text ? (
+                <span className="ti-field-note" style={{ color: "var(--color-accent)", fontWeight: 500 }}>
+                  {customerDiscountInfo.text}
+                </span>
+              ) : null}
             </label>
             <label className="ti-form-span-2">
               <span className="ti-field-label">Referencia del proyecto</span>

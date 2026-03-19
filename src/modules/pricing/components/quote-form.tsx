@@ -86,6 +86,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
   // MVP-05: Abono del cliente
   const [quoteAmountPaid, setQuoteAmountPaid] = useState(0);
 
+  // MVP-07: Descuento temporal vigente (informativo)
+  const [customerDiscountInfo, setCustomerDiscountInfo] = useState<{ text: string; pct: number }>({ text: "", pct: 0 });
+
   // MVP-04.1: Modo edición de borrador
   const [quoteBatchId, setQuoteBatchId] = useState<string | null>(null);
 
@@ -158,7 +161,8 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
     setSelectedPriceListName,
     setCustomers,
     setQuoteAmountPaid,
-    setQuoteBatchId
+    setQuoteBatchId,
+    setCustomerDiscountInfo
   });
   const pricingActions = usePricingWorkbenchActions({
     apiUrl,
@@ -318,6 +322,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
           quoteCustomerId={quoteCustomerId}
           quoteCustomerReference={quoteCustomerReference}
           quoteCustomerName={quoteCustomerName}
+          customerDiscountInfo={customerDiscountInfo}
           priceListOptions={priceListOptions}
           quoteManualDiscountPct={quoteManualDiscountPct}
           quoteManualDiscountReason={quoteManualDiscountReason}

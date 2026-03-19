@@ -31,6 +31,28 @@ type PriceListOption = {
   isActive: boolean;
 };
 
+type DiscountRow = {
+  id: string;
+  customerId: string;
+  discountCode: string | null;
+  discountPct: number;
+  reason: string | null;
+  validFrom: string;
+  validTo: string | null;
+  isActive: boolean;
+  status: "VIGENTE" | "FUTURO" | "EXPIRADO" | "DESACTIVADO";
+  createdAt: string;
+  createdByName: string | null;
+};
+
+const EMPTY_DISCOUNT_FORM = {
+  discountCode: "",
+  discountPct: "",
+  reason: "",
+  validFrom: "",
+  validTo: ""
+};
+
 type CustomersFormProps = {
   accessToken: string;
   apiUrl: string;
@@ -60,6 +82,15 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
   const [editingCustomer, setEditingCustomer] = useState<CustomerRow | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [rutError, setRutError] = useState("");
+
+  // Discount management state
+  const [discountsCustomer, setDiscountsCustomer] = useState<CustomerRow | null>(null);
+  const [discounts, setDiscounts] = useState<DiscountRow[]>([]);
+  const [loadingDiscounts, setLoadingDiscounts] = useState(false);
+  const [discountModalOpen, setDiscountModalOpen] = useState(false);
+  const [editingDiscount, setEditingDiscount] = useState<DiscountRow | null>(null);
+  const [discountForm, setDiscountForm] = useState(EMPTY_DISCOUNT_FORM);
+  const [discountStatus, setDiscountStatus] = useState("");
 
   useEffect(() => {
     void Promise.all([loadCustomers(), loadPriceLists()]);
@@ -105,6 +136,7 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
 
   function openEdit(customer: CustomerRow) {
     setEditingCustomer(customer);
+    setDiscountsCustomer(customer);
     setForm({
       fullName: customer.fullName,
       rut: customer.rut ?? "",
@@ -116,7 +148,9 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
       discountPct: String(customer.discountPct ?? 0),
       notes: customer.notes ?? ""
     });
+    setDiscountStatus("");
     setModalOpen(true);
+    void loadDiscounts(customer.id);
   }
 
   function handleRutBlur() {
@@ -176,6 +210,77 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
       setLoadingActionId(null);
     }
   }
+
+  async function loadDiscounts(customerId: string) {
+    setLoadingDiscounts(true);
+    try {
+      const response = await authedFetch(`${apiUrl}/customers/${customerId}/discounts`);
+      if (response.ok) setDiscounts(await response.json() as DiscountRow[]);
+    } finally {
+      setLoadingDiscounts(false);
+    }
+  }
+
+  function openCreateDiscount() {
+    setEditingDiscount(null);
+    setDiscountForm(EMPTY_DISCOUNT_FORM);
+    setDiscountModalOpen(true);
+  }
+
+  function openEditDiscount(d: DiscountRow) {
+    setEditingDiscount(d);
+    setDiscountForm({
+      discountCode: d.discountCode ?? "",
+      discountPct: String(d.discountPct),
+      reason: d.reason ?? "",
+      validFrom: d.validFrom,
+      validTo: d.validTo ?? ""
+    });
+    setDiscountModalOpen(true);
+  }
+
+  async function handleDiscountSubmit() {
+    if (!discountsCustomer) return;
+    const payload = {
+      discountCode: discountForm.discountCode || undefined,
+      discountPct: Number(discountForm.discountPct || 0),
+      reason: discountForm.reason || undefined,
+      validFrom: discountForm.validFrom,
+      validTo: discountForm.validTo || undefined
+    };
+    const url = editingDiscount
+      ? `${apiUrl}/customers/${discountsCustomer.id}/discounts/${editingDiscount.id}`
+      : `${apiUrl}/customers/${discountsCustomer.id}/discounts`;
+    const method = editingDiscount ? "PUT" : "POST";
+    const response = await authedFetch(url, { method, body: JSON.stringify(payload) });
+    const body = await response.json();
+    if (!response.ok) {
+      setDiscountStatus(body.message ?? `Error HTTP ${response.status}`);
+      return;
+    }
+    setDiscountModalOpen(false);
+    setDiscountStatus(editingDiscount ? "Descuento actualizado." : "Descuento creado.");
+    await loadDiscounts(discountsCustomer.id);
+  }
+
+  async function handleDeactivateDiscount(d: DiscountRow) {
+    if (!discountsCustomer) return;
+    const response = await authedFetch(`${apiUrl}/customers/${discountsCustomer.id}/discounts/${d.id}`, { method: "DELETE" });
+    if (!response.ok) {
+      const body = await response.json();
+      setDiscountStatus(body.message ?? "Error al desactivar.");
+      return;
+    }
+    setDiscountStatus("Descuento desactivado.");
+    await loadDiscounts(discountsCustomer.id);
+  }
+
+  const discountStatusBadge: Record<string, { variant: "success" | "neutral" | "danger"; label: string }> = {
+    VIGENTE: { variant: "success", label: "Vigente" },
+    FUTURO: { variant: "neutral", label: "Futuro" },
+    EXPIRADO: { variant: "neutral", label: "Expirado" },
+    DESACTIVADO: { variant: "danger", label: "Desactivado" }
+  };
 
   if (currentUserRole === "operador") {
     return <article className="flow-card"><p className="flow-title">Clientes</p><p className="status-note">Solo administradores pueden gestionar clientes.</p></article>;
@@ -254,6 +359,7 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title={editingCustomer ? "Editar cliente" : "Nuevo cliente"}
+        panelClassName={editingCustomer ? "dialog-panel--wide" : undefined}
       >
         <div className="form-row" style={{ flexWrap: "wrap" }}>
           <label className="field" style={{ flex: 1, minWidth: "220px" }}>
@@ -310,6 +416,122 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
             {editingCustomer ? "Guardar" : "Crear"}
           </Button>
         </div>
+
+        {/* Discounts section — only when editing */}
+        {editingCustomer ? (
+          <div style={{ marginTop: "1.5rem", borderTop: "1px solid var(--color-border)", paddingTop: "1rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+              <h4 style={{ margin: 0, fontSize: "0.95rem" }}>Descuentos temporales</h4>
+              <Button variant="primary" onClick={openCreateDiscount}>Nuevo descuento</Button>
+            </div>
+            {discountStatus ? <p className="status-note" style={{ marginBottom: "0.5rem" }}>{discountStatus}</p> : null}
+
+            {loadingDiscounts ? (
+              <TableSkeleton rows={2} cols={7} />
+            ) : (
+              <DataTable>
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>%</th>
+                    <th>Motivo</th>
+                    <th>Desde</th>
+                    <th>Hasta</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {discounts.map((d) => {
+                    const badge = discountStatusBadge[d.status] ?? { variant: "neutral" as const, label: d.status };
+                    return (
+                      <tr key={d.id} className={d.isActive ? "" : "table-row-dim"}>
+                        <td>{d.discountCode ?? "—"}</td>
+                        <td>{d.discountPct}%</td>
+                        <td>{d.reason ?? "—"}</td>
+                        <td>{d.validFrom}</td>
+                        <td>{d.validTo ?? "Indefinido"}</td>
+                        <td><Badge variant={badge.variant}>{badge.label}</Badge></td>
+                        <td>
+                          <div className="table-actions">
+                            {d.isActive ? (
+                              <>
+                                <Button variant="secondary" onClick={() => openEditDiscount(d)}>Editar</Button>
+                                <Button variant="secondary" onClick={() => void handleDeactivateDiscount(d)}>Desactivar</Button>
+                              </>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {discounts.length === 0 ? (
+                    <tr><td colSpan={7} className="table-empty">Sin descuentos registrados.</td></tr>
+                  ) : null}
+                </tbody>
+              </DataTable>
+            )}
+
+            {/* Inline discount form */}
+            {discountModalOpen ? (
+              <div style={{ marginTop: "0.75rem", padding: "0.75rem", border: "1px solid var(--color-border)", borderRadius: "6px" }}>
+                <p style={{ margin: "0 0 0.5rem", fontWeight: 500, fontSize: "0.85rem" }}>
+                  {editingDiscount ? "Editar descuento" : "Nuevo descuento"}
+                </p>
+                <div className="form-row" style={{ flexWrap: "wrap" }}>
+                  <label className="field" style={{ width: "140px" }}>
+                    <span>Código</span>
+                    <Input
+                      value={discountForm.discountCode}
+                      onChange={(e) => setDiscountForm((prev) => ({ ...prev, discountCode: e.target.value.toUpperCase() }))}
+                      placeholder="Ej: PROMO2026"
+                    />
+                  </label>
+                  <label className="field" style={{ width: "100px" }}>
+                    <span>%</span>
+                    <Input
+                      type="number"
+                      value={discountForm.discountPct}
+                      onChange={(e) => setDiscountForm((prev) => ({ ...prev, discountPct: e.target.value }))}
+                      min="0" max="100" step="0.1"
+                    />
+                  </label>
+                  <label className="field" style={{ flex: 1, minWidth: "160px" }}>
+                    <span>Motivo</span>
+                    <Input
+                      value={discountForm.reason}
+                      onChange={(e) => setDiscountForm((prev) => ({ ...prev, reason: e.target.value }))}
+                      placeholder="Razón del descuento"
+                    />
+                  </label>
+                  <label className="field" style={{ width: "140px" }}>
+                    <span>Desde</span>
+                    <Input
+                      type="date"
+                      value={discountForm.validFrom}
+                      onChange={(e) => setDiscountForm((prev) => ({ ...prev, validFrom: e.target.value }))}
+                    />
+                  </label>
+                  <label className="field" style={{ width: "140px" }}>
+                    <span>Hasta</span>
+                    <Input
+                      type="date"
+                      value={discountForm.validTo}
+                      onChange={(e) => setDiscountForm((prev) => ({ ...prev, validTo: e.target.value }))}
+                    />
+                    <span style={{ fontSize: "0.7rem", color: "var(--color-muted)" }}>Vacío = indefinido</span>
+                  </label>
+                </div>
+                <div className="inline-actions" style={{ marginTop: "0.5rem" }}>
+                  <Button variant="secondary" onClick={() => setDiscountModalOpen(false)}>Cancelar</Button>
+                  <Button variant="primary" onClick={() => void handleDiscountSubmit()} disabled={!discountForm.discountPct || !discountForm.validFrom}>
+                    {editingDiscount ? "Guardar" : "Crear"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </Dialog>
     </article>
   );

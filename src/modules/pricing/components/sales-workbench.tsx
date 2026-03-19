@@ -253,22 +253,32 @@ export function SalesWorkbench({
                       <span>Referencia</span>
                       <strong>{selectedSale.customer?.companyOrReference ?? selectedSale.customerReference ?? "—"}</strong>
                     </div>
-                    <div className="ti-sales-summary__row">
-                      <span>Descuento</span>
-                      <strong>{selectedSale.discountPctApplied ? `${selectedSale.discountPctApplied}%` : "—"}</strong>
-                    </div>
                   </div>
 
-                  <TotalsSummary
-                    rows={[
-                      { label: "Subtotal", value: `$${Math.round(selectedSale.subtotalAmount).toLocaleString()}` },
+                  {(() => {
+                    const discPct = selectedSale.discountPctApplied;
+                    const subtotalWithDiscount = selectedSale.subtotalAmount;
+                    const subtotalBruto = discPct > 0 ? Math.round(subtotalWithDiscount / (1 - discPct / 100)) : subtotalWithDiscount;
+                    const discountAmount = subtotalBruto - subtotalWithDiscount;
+
+                    const rows = [
+                      { label: "Subtotal bruto", value: `$${Math.round(subtotalBruto).toLocaleString()}` },
+                      ...(discPct > 0
+                        ? [{ label: `Descuento (${discPct}%)`, value: `-$${Math.round(discountAmount).toLocaleString()}`, tone: "success" as const }]
+                        : [{ label: "Descuento", value: "—", tone: "muted" as const }]),
                       { label: "Impuesto (19%)", value: `$${Math.round(selectedSale.taxAmount).toLocaleString()}` },
-                      { label: "Abonado", value: `$${Math.round(selectedSale.amountPaid).toLocaleString()}`, tone: selectedSale.amountPaid > 0 ? "success" : "muted" }
-                    ]}
-                    totalLabel="Total"
-                    totalValue={`$${Math.round(selectedSale.totalAmount).toLocaleString()}`}
-                    note={`Saldo pendiente: $${Math.round(selectedSale.balanceDue).toLocaleString()}`}
-                  />
+                      { label: "Abonado", value: `$${Math.round(selectedSale.amountPaid).toLocaleString()}`, tone: (selectedSale.amountPaid > 0 ? "success" : "muted") as "success" | "muted" }
+                    ];
+
+                    return (
+                      <TotalsSummary
+                        rows={rows}
+                        totalLabel="Total"
+                        totalValue={`$${Math.round(selectedSale.totalAmount).toLocaleString()}`}
+                        note={`Saldo pendiente: $${Math.round(selectedSale.balanceDue).toLocaleString()}`}
+                      />
+                    );
+                  })()}
 
                   {selectedSale.status === "DRAFT" ? (
                     <>

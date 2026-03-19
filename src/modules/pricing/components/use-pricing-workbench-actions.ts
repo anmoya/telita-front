@@ -286,31 +286,43 @@ export function usePricingWorkbenchActions({
         return;
       }
 
-      void authedFetch(`${apiUrl}/quotes/batch`, {
-        method: "POST",
-        body: JSON.stringify({
-          branchCode: "MAIN",
-          priceListName: selectedPriceListName,
-          customerId: quoteCustomerId || undefined,
-          customerName: quoteCustomerName || undefined,
-          customerReference: quoteCustomerReference || undefined,
-          amountPaid: quoteAmountPaid > 0 ? quoteAmountPaid : undefined,
-          lines: quoteItems.map((item, idx) => ({
-            skuCode: item.skuCode ?? "",
-            requestedWidthM: Number(item.widthM),
-            requestedHeightM: Number(item.heightM),
-            quantity: Number(item.quantity),
-            unitPrice: item.unitPrice ?? 0,
-            lineSubtotal: item.subtotal ?? 0,
-            priceMethod: item.priceMethod ?? "LINEAR_METER",
-            roomAreaName: item.roomAreaName || undefined,
-            categoryId: item.categoryId || undefined,
-            categoryName: !item.categoryId && item.categoryName ? item.categoryName : undefined,
-            lineNote: item.lineNote || undefined,
-            displayOrder: idx
-          }))
-        })
-      });
+      // Guardar en historial y finalizar la cotización
+      if (quoteBatchId) {
+        // Modo edición: finalizar el borrador existente
+        void authedFetch(`${apiUrl}/quotes/batch/${quoteBatchId}/finalize`, { method: "POST" });
+      } else {
+        // Modo nuevo: crear batch y finalizar
+        void authedFetch(`${apiUrl}/quotes/batch`, {
+          method: "POST",
+          body: JSON.stringify({
+            branchCode: "MAIN",
+            priceListName: selectedPriceListName,
+            customerId: quoteCustomerId || undefined,
+            customerName: quoteCustomerName || undefined,
+            customerReference: quoteCustomerReference || undefined,
+            amountPaid: quoteAmountPaid > 0 ? quoteAmountPaid : undefined,
+            lines: quoteItems.map((item, idx) => ({
+              skuCode: item.skuCode ?? "",
+              requestedWidthM: Number(item.widthM),
+              requestedHeightM: Number(item.heightM),
+              quantity: Number(item.quantity),
+              unitPrice: item.unitPrice ?? 0,
+              lineSubtotal: item.subtotal ?? 0,
+              priceMethod: item.priceMethod ?? "LINEAR_METER",
+              roomAreaName: item.roomAreaName || undefined,
+              categoryId: item.categoryId || undefined,
+              categoryName: !item.categoryId && item.categoryName ? item.categoryName : undefined,
+              lineNote: item.lineNote || undefined,
+              displayOrder: idx
+            }))
+          })
+        }).then(async (res) => {
+          if (res.ok) {
+            const created = await res.json() as { id?: string };
+            if (created.id) void authedFetch(`${apiUrl}/quotes/batch/${created.id}/finalize`, { method: "POST" });
+          }
+        });
+      }
 
       onResetQuoteWorkbench();
       onNavigate("sales");
@@ -390,7 +402,7 @@ export function usePricingWorkbenchActions({
     }));
 
     const payload = isUpdate
-      ? { customerName: quoteCustomerName || undefined, customerReference: quoteCustomerReference || undefined, amountPaid: quoteAmountPaid > 0 ? quoteAmountPaid : 0, lines }
+      ? { customerId: quoteCustomerId || null, customerName: quoteCustomerName || undefined, customerReference: quoteCustomerReference || undefined, amountPaid: quoteAmountPaid > 0 ? quoteAmountPaid : 0, lines }
       : { branchCode: "MAIN", priceListName: selectedPriceListName, customerId: quoteCustomerId || undefined, customerName: quoteCustomerName || undefined, customerReference: quoteCustomerReference || undefined, amountPaid: quoteAmountPaid > 0 ? quoteAmountPaid : undefined, lines };
 
     try {

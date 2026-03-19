@@ -29,6 +29,7 @@ type UsePricingWorkbenchSupportArgs = {
   setCustomers: (value: CustomerOption[]) => void;
   setQuoteAmountPaid: (value: number) => void;
   setQuoteBatchId: (value: string | null) => void;
+  setCustomerDiscountInfo: (value: { text: string; pct: number }) => void;
 };
 
 export function usePricingWorkbenchSupport({
@@ -55,7 +56,8 @@ export function usePricingWorkbenchSupport({
   setSelectedPriceListName,
   setCustomers,
   setQuoteAmountPaid,
-  setQuoteBatchId
+  setQuoteBatchId,
+  setCustomerDiscountInfo
 }: UsePricingWorkbenchSupportArgs) {
   function addQuoteItem() {
     setQuoteItems((current) => [
@@ -114,6 +116,7 @@ export function usePricingWorkbenchSupport({
     setQuoteManualDiscountReason("");
     setQuoteAmountPaid(0);
     setQuoteBatchId(null);
+    setCustomerDiscountInfo({ text: "", pct: 0 });
     setActiveQuoteItemId(null);
     setQuoteItemMatches([]);
     setQuoteItemMatchesStatus("");
@@ -209,12 +212,41 @@ export function usePricingWorkbenchSupport({
     if (!selected) {
       setQuoteCustomerName("");
       setQuoteCustomerReference("");
+      setCustomerDiscountInfo({ text: "", pct: 0 });
       return;
     }
     setQuoteCustomerName(selected.fullName);
     setQuoteCustomerReference(selected.companyOrReference ?? "");
     if (!selectedPriceListName && selected.preferredPriceListName) {
       setSelectedPriceListName(selected.preferredPriceListName);
+    }
+    void fetchCustomerDiscountInfo(selectedId);
+  }
+
+  async function fetchCustomerDiscountInfo(customerId: string) {
+    try {
+      const response = await authedFetch(`${apiUrl}/customers/${customerId}/discounts`);
+      if (!response.ok) { setCustomerDiscountInfo({ text: "", pct: 0 }); return; }
+      type DiscountInfo = { discountPct: number; discountCode: string | null; validFrom: string; validTo: string | null; status: string };
+      const discounts = (await response.json()) as DiscountInfo[];
+      const vigente = discounts.find((d) => d.status === "VIGENTE");
+      const futuro = discounts.find((d) => d.status === "FUTURO");
+      if (vigente) {
+        const hasta = vigente.validTo ? ` hasta ${vigente.validTo}` : " (sin vencimiento)";
+        setCustomerDiscountInfo({
+          text: `Descuento cliente: ${vigente.discountPct}%${vigente.discountCode ? ` (${vigente.discountCode})` : ""} vigente${hasta}`,
+          pct: vigente.discountPct
+        });
+      } else if (futuro) {
+        setCustomerDiscountInfo({
+          text: `Descuento futuro: ${futuro.discountPct}%${futuro.discountCode ? ` (${futuro.discountCode})` : ""} desde ${futuro.validFrom}`,
+          pct: 0
+        });
+      } else {
+        setCustomerDiscountInfo({ text: "", pct: 0 });
+      }
+    } catch {
+      setCustomerDiscountInfo({ text: "", pct: 0 });
     }
   }
 
@@ -228,6 +260,7 @@ export function usePricingWorkbenchSupport({
       const batch = await response.json() as {
         id: string;
         priceListName: string;
+        customerId: string | null;
         customerName: string | null;
         customerReference: string | null;
         amountPaid: number;
@@ -249,8 +282,14 @@ export function usePricingWorkbenchSupport({
 
       setQuoteBatchId(batch.id);
       setSelectedPriceListName(batch.priceListName);
+      setQuoteCustomerId(batch.customerId ?? "");
       setQuoteCustomerName(batch.customerName ?? "");
       setQuoteCustomerReference(batch.customerReference ?? "");
+      if (batch.customerId) {
+        void fetchCustomerDiscountInfo(batch.customerId);
+      } else {
+        setCustomerDiscountInfo({ text: "", pct: 0 });
+      }
       setQuoteAmountPaid(batch.amountPaid ?? 0);
       setQuoteManualDiscountPct("0");
       setQuoteManualDiscountReason("");

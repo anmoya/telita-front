@@ -40,6 +40,7 @@ type QuoteBatch = {
   id: string;
   status: "DRAFT" | "FINALIZED" | "EXPIRED";
   priceListName: string;
+  customerId: string | null;
   customerName: string | null;
   customerReference: string | null;
   subtotalAmount: number;
@@ -157,6 +158,7 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
         {
           branchCode: "MAIN",
           priceListName: batch.priceListName,
+          customerId: batch.customerId ?? undefined,
           customerName: batch.customerName ?? undefined,
           customerReference: batch.customerReference ?? undefined,
           amountPaid: batch.amountPaid > 0 ? batch.amountPaid : undefined,
@@ -171,6 +173,10 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
           }))
         }
       );
+      // Finalizar la cotización tras crear venta
+      if (batch.status === "DRAFT") {
+        void api.post(`/quotes/batch/${batch.id}/finalize`, {});
+      }
       setStatus(`Draft creado: ${data.quoteCode ?? "?"}`);
       onNavigate("sales");
     } catch {

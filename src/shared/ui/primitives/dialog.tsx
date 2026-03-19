@@ -8,9 +8,19 @@ type DialogProps = {
   title: string;
   children: ReactNode;
   blockBackButton?: boolean; // SPEC-30: Prevent Back button from closing modal
+  panelClassName?: string;
+  bodyClassName?: string;
 };
 
-export function Dialog({ open, onClose, title, children, blockBackButton = true }: DialogProps) {
+export function Dialog({
+  open,
+  onClose,
+  title,
+  children,
+  blockBackButton = true,
+  panelClassName = "",
+  bodyClassName = ""
+}: DialogProps) {
   useEffect(() => {
     if (!open || !blockBackButton) return;
 
@@ -40,14 +50,14 @@ export function Dialog({ open, onClose, title, children, blockBackButton = true 
 
   return (
     <div className="dialog-overlay" onClick={onClose}>
-      <div className="dialog-panel" onClick={(e) => e.stopPropagation()}>
+      <div className={`dialog-panel ${panelClassName}`.trim()} onClick={(e) => e.stopPropagation()}>
         <div className="dialog-header">
           <span className="dialog-title">{title}</span>
           <button className="dialog-close" onClick={onClose} aria-label="Cerrar">
             ✕
           </button>
         </div>
-        <div className="dialog-body">{children}</div>
+        <div className={`dialog-body ${bodyClassName}`.trim()}>{children}</div>
       </div>
     </div>
   );

@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Badge } from "../../../shared/ui/primitives/badge";
 import { Button } from "../../../shared/ui/primitives/button";
+import { DataTable } from "../../../shared/ui/primitives/data-table";
+import { Dialog } from "../../../shared/ui/primitives/dialog";
 import { Input } from "../../../shared/ui/primitives/input";
 import { Select } from "../../../shared/ui/primitives/select";
-import { Dialog } from "../../../shared/ui/primitives/dialog";
 import { Spinner } from "../../../shared/ui/primitives/spinner";
 import { TableSkeleton } from "../../../shared/ui/primitives/table-skeleton";
 
@@ -210,7 +212,13 @@ export function UsersForm({ accessToken, apiUrl, currentUserRole, currentUserId 
   return (
     <div className="module-panel">
       <div className="panel-toolbar">
-        <h3 className="panel-heading">Usuarios</h3>
+        <div className="admin-module-title-group">
+          <p className="admin-module-kicker">Acceso y permisos</p>
+          <h3 className="panel-heading">Usuarios</h3>
+          <p className="admin-module-summary">
+            Controla roles, sucursales y credenciales operativas del equipo.
+          </p>
+        </div>
         {canManageUsers && (
           <Button variant="primary" onClick={openCreate}>
             Nuevo usuario
@@ -221,7 +229,7 @@ export function UsersForm({ accessToken, apiUrl, currentUserRole, currentUserId 
       {loadingMenu ? (
         <TableSkeleton cols={6} rows={4} />
       ) : (
-        <table className="data-table">
+        <DataTable>
           <thead>
             <tr>
               <th>Nombre</th>
@@ -241,15 +249,26 @@ export function UsersForm({ accessToken, apiUrl, currentUserRole, currentUserId 
               </tr>
             ) : (
               users.map((user) => (
-                <tr key={user.id} style={{ opacity: user.isActive ? 1 : 0.5 }}>
-                  <td>{user.fullName}</td>
+                <tr key={user.id} className={user.isActive ? "" : "table-row-dim"}>
+                  <td>
+                    <div className="table-cell-primary">
+                      <strong>{user.fullName}</strong>
+                      <div className="table-cell-meta">Creado {new Date(user.createdAt).toLocaleDateString("es-CL")}</div>
+                    </div>
+                  </td>
                   <td>{user.email}</td>
-                  <td>{ROLE_LABELS[user.role]}</td>
+                  <td>
+                    <Badge variant="neutral">{ROLE_LABELS[user.role]}</Badge>
+                  </td>
                   <td>{user.branchCode}</td>
-                  <td>{user.isActive ? "Sí" : "No"}</td>
+                  <td>
+                    <Badge variant={user.isActive ? "success" : "danger"}>
+                      {user.isActive ? "Activo" : "Inactivo"}
+                    </Badge>
+                  </td>
                   {canManageUsers && (
                     <td>
-                      <div style={{ display: "flex", gap: "6px" }}>
+                      <div className="table-actions">
                         <Button variant="secondary" onClick={() => openEdit(user)}>
                           Editar
                         </Button>
@@ -276,7 +295,7 @@ export function UsersForm({ accessToken, apiUrl, currentUserRole, currentUserId 
               ))
             )}
           </tbody>
-        </table>
+        </DataTable>
       )}
 
       {/* Create modal */}

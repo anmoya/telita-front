@@ -86,6 +86,11 @@ export default function HomePage() {
     [tokenInfo]
   );
 
+  const primaryMenuKeys: MenuKey[] = ["dashboard", "pricing", "sales", "cuts", "scraps", "labels", "audit", "settings"];
+  const primaryMenuItems = menuItems.filter((item) => primaryMenuKeys.includes(item.key));
+  const adminMenuItems = menuItems.filter((item) => !primaryMenuKeys.includes(item.key));
+  const activeMenuLabel = ALL_MENU_ITEMS.find((item) => item.key === activeMenu)?.label ?? "Operacion";
+
   function handleLoginSuccess(token: string, onboardingCompletedAt: string | null) {
     setAccessToken(token);
     // El servidor manda la verdad: si onboardingCompletedAt es null, el usuario nunca completó el tour
@@ -136,39 +141,71 @@ export default function HomePage() {
   return (
     <main className="app-shell-2026">
       <aside className="app-sidebar-2026">
-        <div className="brand-block">
-          <div className="brand-logo">T</div>
-          <div>
-            <p className="sidebar-kicker">Telita</p>
-            <h1 className="sidebar-title">Operaciones</h1>
+        <div className="sidebar-brand-panel">
+          <div className="brand-block">
+            <div className="brand-logo">T</div>
+            <div>
+              <p className="sidebar-kicker">Telita ERP</p>
+              <h1 className="sidebar-title">Operaciones textiles</h1>
+            </div>
           </div>
+          <p className="sidebar-text">
+            Cotiza, vende, corta, almacena y reutiliza con criterio operativo.
+          </p>
         </div>
 
-        <nav className="sidebar-nav">
-          {menuItems.map((item) => (
-            <button
-              key={item.key}
-              id={`menu-item-${item.key}`}
-              className={`nav-item ${activeMenu === item.key ? "nav-item-active" : ""}`.trim()}
-              onClick={() => setActiveMenu(item.key)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
+        <div className="sidebar-scroll-region">
+          <div className="sidebar-nav-group">
+            <p className="sidebar-group-title">Operacion</p>
+            <nav className="sidebar-nav">
+              {primaryMenuItems.map((item) => (
+                <button
+                  key={item.key}
+                  id={`menu-item-${item.key}`}
+                  className={`nav-item ${activeMenu === item.key ? "nav-item-active" : ""}`.trim()}
+                  onClick={() => setActiveMenu(item.key)}
+                >
+                  <span className="nav-item__label">{item.label}</span>
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          {adminMenuItems.length > 0 ? (
+            <div className="sidebar-nav-group">
+              <p className="sidebar-group-title">Administracion</p>
+              <nav className="sidebar-nav">
+                {adminMenuItems.map((item) => (
+                  <button
+                    key={item.key}
+                    id={`menu-item-${item.key}`}
+                    className={`nav-item ${activeMenu === item.key ? "nav-item-active" : ""}`.trim()}
+                    onClick={() => setActiveMenu(item.key)}
+                  >
+                    <span className="nav-item__label">{item.label}</span>
+                  </button>
+                ))}
+              </nav>
+            </div>
+          ) : null}
+        </div>
+
       </aside>
 
       <section className="app-content-2026">
         <header className="topbar-2026">
-          <div>
-            <p className="topbar-kicker">App 2026</p>
-            <h2 className="topbar-title">{ALL_MENU_ITEMS.find((item) => item.key === activeMenu)?.label}</h2>
+          <div className="topbar-main">
+            <p className="topbar-kicker">Sistema operativo textil</p>
+            <div className="topbar-title-row">
+              <h2 className="topbar-title">{activeMenuLabel}</h2>
+              <span className="topbar-chip">{tokenInfo?.role ?? "usuario"}</span>
+            </div>
           </div>
 
           <div className="topbar-user">
             <div>
               <p className="user-email">{tokenInfo?.email ?? "usuario"}</p>
-              <p className="user-role">{tokenInfo?.role ?? "rol"}</p>
+              <p className="user-role">Sucursal MAIN</p>
             </div>
             <Button variant="secondary" onClick={handleLogout}>
               Cerrar sesion
@@ -176,67 +213,69 @@ export default function HomePage() {
           </div>
         </header>
 
-        {activeMenu === "catalogo" && tokenInfo && (
-          <CatalogForm
-            accessToken={accessToken}
-            apiUrl={apiUrl}
-            currentUserRole={tokenInfo.role}
-          />
-        )}
-        {activeMenu === "usuarios" && tokenInfo && (
-          <UsersForm
-            accessToken={accessToken}
-            apiUrl={apiUrl}
-            currentUserRole={tokenInfo.role}
-            currentUserId={tokenInfo.sub}
-          />
-        )}
-        {activeMenu === "perfil" && tokenInfo && (
-          <MyProfileForm
-            accessToken={accessToken}
-            apiUrl={apiUrl}
-            currentUserId={tokenInfo.sub}
-            onStartTour={() => startTour((menu) => setActiveMenu(menu as MenuKey), () => { void markOnboardingDone(); })}
-          />
-        )}
-        {activeMenu === "listas-precios" && tokenInfo && (
-          <PriceListForm
-            accessToken={accessToken}
-            apiUrl={apiUrl}
-            currentUserRole={tokenInfo.role}
-          />
-        )}
-        {activeMenu === "ubicaciones" && tokenInfo && (
-          <StorageLocationsForm
-            accessToken={accessToken}
-            apiUrl={apiUrl}
-            currentUserRole={tokenInfo.role}
-          />
-        )}
-        {activeMenu === "categorias-cotizacion" && tokenInfo && (
-          <QuoteItemCategoriesForm
-            accessToken={accessToken}
-            apiUrl={apiUrl}
-            currentUserRole={tokenInfo.role}
-          />
-        )}
-        {activeMenu === "historial-cotizaciones" && tokenInfo && (
-          <QuoteBatchesForm
-            accessToken={accessToken}
-            apiUrl={apiUrl}
-            onNavigate={setActiveMenu}
-          />
-        )}
-        {activeMenu === "clientes" && tokenInfo && (
-          <CustomersForm
-            accessToken={accessToken}
-            apiUrl={apiUrl}
-            currentUserRole={tokenInfo.role}
-          />
-        )}
-        {activeMenu !== "catalogo" && activeMenu !== "usuarios" && activeMenu !== "perfil" && activeMenu !== "listas-precios" && activeMenu !== "ubicaciones" && activeMenu !== "categorias-cotizacion" && activeMenu !== "historial-cotizaciones" && activeMenu !== "clientes" && (
-          <QuoteForm accessToken={accessToken} activeMenu={activeMenu} onNavigate={setActiveMenu} />
-        )}
+        <div className={`app-content-scroll ${activeMenu === "pricing" || activeMenu === "sales" ? "app-content-scroll--locked" : ""}`.trim()}>
+          {activeMenu === "catalogo" && tokenInfo && (
+            <CatalogForm
+              accessToken={accessToken}
+              apiUrl={apiUrl}
+              currentUserRole={tokenInfo.role}
+            />
+          )}
+          {activeMenu === "usuarios" && tokenInfo && (
+            <UsersForm
+              accessToken={accessToken}
+              apiUrl={apiUrl}
+              currentUserRole={tokenInfo.role}
+              currentUserId={tokenInfo.sub}
+            />
+          )}
+          {activeMenu === "perfil" && tokenInfo && (
+            <MyProfileForm
+              accessToken={accessToken}
+              apiUrl={apiUrl}
+              currentUserId={tokenInfo.sub}
+              onStartTour={() => startTour((menu) => setActiveMenu(menu as MenuKey), () => { void markOnboardingDone(); })}
+            />
+          )}
+          {activeMenu === "listas-precios" && tokenInfo && (
+            <PriceListForm
+              accessToken={accessToken}
+              apiUrl={apiUrl}
+              currentUserRole={tokenInfo.role}
+            />
+          )}
+          {activeMenu === "ubicaciones" && tokenInfo && (
+            <StorageLocationsForm
+              accessToken={accessToken}
+              apiUrl={apiUrl}
+              currentUserRole={tokenInfo.role}
+            />
+          )}
+          {activeMenu === "categorias-cotizacion" && tokenInfo && (
+            <QuoteItemCategoriesForm
+              accessToken={accessToken}
+              apiUrl={apiUrl}
+              currentUserRole={tokenInfo.role}
+            />
+          )}
+          {activeMenu === "historial-cotizaciones" && tokenInfo && (
+            <QuoteBatchesForm
+              accessToken={accessToken}
+              apiUrl={apiUrl}
+              onNavigate={setActiveMenu}
+            />
+          )}
+          {activeMenu === "clientes" && tokenInfo && (
+            <CustomersForm
+              accessToken={accessToken}
+              apiUrl={apiUrl}
+              currentUserRole={tokenInfo.role}
+            />
+          )}
+          {activeMenu !== "catalogo" && activeMenu !== "usuarios" && activeMenu !== "perfil" && activeMenu !== "listas-precios" && activeMenu !== "ubicaciones" && activeMenu !== "categorias-cotizacion" && activeMenu !== "historial-cotizaciones" && activeMenu !== "clientes" && (
+            <QuoteForm accessToken={accessToken} activeMenu={activeMenu} onNavigate={setActiveMenu} />
+          )}
+        </div>
       </section>
 
       {showWelcome && (

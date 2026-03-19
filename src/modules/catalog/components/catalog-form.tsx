@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Badge } from "../../../shared/ui/primitives/badge";
 import { Button } from "../../../shared/ui/primitives/button";
+import { DataTable } from "../../../shared/ui/primitives/data-table";
+import { Dialog } from "../../../shared/ui/primitives/dialog";
 import { Input } from "../../../shared/ui/primitives/input";
 import { Select } from "../../../shared/ui/primitives/select";
-import { Dialog } from "../../../shared/ui/primitives/dialog";
 import { Spinner } from "../../../shared/ui/primitives/spinner";
 import { TableSkeleton } from "../../../shared/ui/primitives/table-skeleton";
 
@@ -233,7 +235,13 @@ export function CatalogForm({ accessToken, apiUrl, currentUserRole }: CatalogFor
   return (
     <div className="module-panel">
       <div className="panel-toolbar">
-        <h3 className="panel-heading">Catálogo de Telas</h3>
+        <div className="admin-module-title-group">
+          <p className="admin-module-kicker">Base maestra</p>
+          <h3 className="panel-heading">Catálogo de Telas</h3>
+          <p className="admin-module-summary">
+            Administra SKUs, dimensiones base y estado operativo del inventario comercial.
+          </p>
+        </div>
         {canManageSkus && (
           <Button variant="primary" onClick={openCreate}>
             Nuevo SKU
@@ -244,7 +252,7 @@ export function CatalogForm({ accessToken, apiUrl, currentUserRole }: CatalogFor
       {loadingMenu ? (
         <TableSkeleton cols={7} rows={4} />
       ) : (
-        <table className="data-table">
+        <DataTable>
           <thead>
             <tr>
               <th>Código</th>
@@ -264,15 +272,31 @@ export function CatalogForm({ accessToken, apiUrl, currentUserRole }: CatalogFor
               </tr>
             ) : (
               skus.map((sku) => (
-                <tr key={sku.id} style={{ opacity: sku.isActive ? 1 : 0.5 }}>
-                  <td>{sku.code}</td>
-                  <td>{sku.name}</td>
+                <tr key={sku.id} className={sku.isActive ? "" : "table-row-dim"}>
+                  <td>
+                    <div className="table-cell-primary">
+                      <strong>{sku.code}</strong>
+                      <div className="table-cell-meta">{sku.description?.trim() || "Sin descripcion"}</div>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="table-cell-primary">
+                      <strong>{sku.name}</strong>
+                      <div className="table-cell-meta">
+                        Espesor {Number(sku.thicknessValue).toFixed(3)} {sku.thicknessUnitCode}
+                      </div>
+                    </div>
+                  </td>
                   <td>{Number(sku.widthValue).toFixed(3)}</td>
                   <td>{Number(sku.lengthValue).toFixed(3)}</td>
-                  <td>{sku.isActive ? "Sí" : "No"}</td>
+                  <td>
+                    <Badge variant={sku.isActive ? "success" : "danger"}>
+                      {sku.isActive ? "Activo" : "Inactivo"}
+                    </Badge>
+                  </td>
                   {canManageSkus && (
                     <td>
-                      <div style={{ display: "flex", gap: "6px" }}>
+                      <div className="table-actions">
                         <Button variant="secondary" onClick={() => openEdit(sku)}>
                           Editar
                         </Button>
@@ -296,7 +320,7 @@ export function CatalogForm({ accessToken, apiUrl, currentUserRole }: CatalogFor
               ))
             )}
           </tbody>
-        </table>
+        </DataTable>
       )}
 
       {/* Create modal */}

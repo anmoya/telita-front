@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/primitives/button";
+import { Badge } from "../../../shared/ui/primitives/badge";
+import { DataTable } from "../../../shared/ui/primitives/data-table";
 import { Dialog } from "../../../shared/ui/primitives/dialog";
 import { Input } from "../../../shared/ui/primitives/input";
 import { Select } from "../../../shared/ui/primitives/select";
@@ -162,11 +164,19 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
   }
 
   return (
-    <article className="flow-card">
-      <p className="flow-title">Clientes</p>
-      <p className="status-note">{status}</p>
+    <article className="module-panel">
+      <div className="panel-toolbar">
+        <div className="admin-module-title-group">
+          <p className="admin-module-kicker">Relacion comercial</p>
+          <h3 className="panel-heading">Clientes</h3>
+          <p className="admin-module-summary">
+            Gestiona cuentas, descuentos y listas preferidas para cotizacion y venta.
+          </p>
+          {status ? <p className="status-note">{status}</p> : null}
+        </div>
+      </div>
 
-      <div className="inline-actions" style={{ marginBottom: "1rem" }}>
+      <div className="admin-toolbar-inline">
         <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por nombre, código o descuento" />
         <Button variant="secondary" onClick={() => void loadCustomers()} disabled={loading}>
           {loading ? <Spinner size="sm" /> : "Buscar"}
@@ -177,27 +187,35 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
       {loading ? (
         <TableSkeleton rows={5} cols={7} />
       ) : (
-        <table className="data-table">
+        <DataTable>
           <thead>
             <tr><th>Código</th><th>Cliente</th><th>Contacto</th><th>Lista</th><th>Descuento</th><th>Estado</th><th>Acciones</th></tr>
           </thead>
           <tbody>
             {customers.map((customer) => (
-              <tr key={customer.id} style={{ opacity: customer.isActive ? 1 : 0.55 }}>
+              <tr key={customer.id} className={customer.isActive ? "" : "table-row-dim"}>
                 <td>{customer.code}</td>
                 <td>
-                  <strong>{customer.fullName}</strong>
-                  <div style={{ fontSize: "0.8em", color: "var(--muted)" }}>{customer.companyOrReference ?? "—"}</div>
+                  <div className="table-cell-primary">
+                    <strong>{customer.fullName}</strong>
+                    <div className="table-cell-meta">{customer.companyOrReference ?? "Sin empresa o referencia"}</div>
+                  </div>
                 </td>
                 <td>
-                  <div>{customer.phone ?? "—"}</div>
-                  <div style={{ fontSize: "0.8em", color: "var(--muted)" }}>{customer.email ?? "—"}</div>
+                  <div className="table-cell-primary">
+                    <span>{customer.phone ?? "—"}</span>
+                    <div className="table-cell-meta">{customer.email ?? "Sin correo"}</div>
+                  </div>
                 </td>
                 <td>{customer.preferredPriceListName ?? "—"}</td>
                 <td>{customer.discountCode ? `${customer.discountCode} · ${customer.discountPct}%` : `${customer.discountPct}%`}</td>
-                <td>{customer.isActive ? "Activo" : "Inactivo"}</td>
                 <td>
-                  <div className="inline-actions">
+                  <Badge variant={customer.isActive ? "success" : "danger"}>
+                    {customer.isActive ? "Activo" : "Inactivo"}
+                  </Badge>
+                </td>
+                <td>
+                  <div className="table-actions">
                     <Button variant="secondary" onClick={() => openEdit(customer)}>Editar</Button>
                     <Button variant="secondary" onClick={() => void toggleStatus(customer)} disabled={loadingActionId === customer.id}>
                       {loadingActionId === customer.id ? <Spinner size="sm" /> : customer.isActive ? "Desactivar" : "Activar"}
@@ -207,10 +225,10 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
               </tr>
             ))}
             {customers.length === 0 ? (
-              <tr><td colSpan={7}>Sin clientes.</td></tr>
+              <tr><td colSpan={7} className="table-empty">Sin clientes.</td></tr>
             ) : null}
           </tbody>
-        </table>
+        </DataTable>
       )}
 
       <Dialog

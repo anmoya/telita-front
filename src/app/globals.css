@@ -500,6 +500,13 @@ body {
   color: var(--muted);
 }
 
+.field-error {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--danger, #e5484d);
+  margin-top: 0.15rem;
+}
+
 .link-btn {
   display: inline-flex;
   align-items: center;

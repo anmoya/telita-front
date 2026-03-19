@@ -205,10 +205,14 @@ export function PricingWorkbench({
                 <option value="">Seleccionar cliente</option>
                 {customers.map((customer) => (
                   <option key={customer.id} value={customer.id}>
-                    {customer.code} - {customer.fullName}
+                    {customer.code} - {customer.fullName}{customer.rut ? ` (${customer.rut})` : ""}
                   </option>
                 ))}
               </Select>
+              {quoteCustomerId && (() => {
+                const sel = customers.find((c) => c.id === quoteCustomerId);
+                return sel?.rut ? <span className="ti-field-note">RUT: {sel.rut}</span> : null;
+              })()}
             </label>
             <label className="ti-form-span-2">
               <span className="ti-field-label">Referencia del proyecto</span>

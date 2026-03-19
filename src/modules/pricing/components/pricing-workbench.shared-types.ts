@@ -243,6 +243,7 @@ export type SaleLineDraft = {
 export type CustomerOption = {
   id: string;
   code: string;
+  rut: string | null;
   fullName: string;
   phone: string | null;
   email: string | null;

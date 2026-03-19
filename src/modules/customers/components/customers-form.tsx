@@ -9,10 +9,12 @@ import { Input } from "../../../shared/ui/primitives/input";
 import { Select } from "../../../shared/ui/primitives/select";
 import { Spinner } from "../../../shared/ui/primitives/spinner";
 import { TableSkeleton } from "../../../shared/ui/primitives/table-skeleton";
+import { normalizeRut, validateRut } from "../../../shared/utils/rut";
 
 type CustomerRow = {
   id: string;
   code: string;
+  rut: string | null;
   fullName: string;
   phone: string | null;
   email: string | null;
@@ -37,6 +39,7 @@ type CustomersFormProps = {
 
 const EMPTY_FORM = {
   fullName: "",
+  rut: "",
   phone: "",
   email: "",
   companyOrReference: "",
@@ -56,6 +59,7 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<CustomerRow | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [rutError, setRutError] = useState("");
 
   useEffect(() => {
     void Promise.all([loadCustomers(), loadPriceLists()]);
@@ -103,6 +107,7 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
     setEditingCustomer(customer);
     setForm({
       fullName: customer.fullName,
+      rut: customer.rut ?? "",
       phone: customer.phone ?? "",
       email: customer.email ?? "",
       companyOrReference: customer.companyOrReference ?? "",
@@ -114,7 +119,19 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
     setModalOpen(true);
   }
 
+  function handleRutBlur() {
+    if (!form.rut.trim()) { setRutError(""); return; }
+    const normalized = normalizeRut(form.rut);
+    if (!validateRut(normalized)) { setRutError("RUT inválido"); return; }
+    setRutError("");
+    setForm((prev) => ({ ...prev, rut: normalized }));
+  }
+
   async function handleSubmit() {
+    if (form.rut.trim() && !validateRut(normalizeRut(form.rut))) {
+      setRutError("RUT inválido");
+      return;
+    }
     const method = editingCustomer ? "PUT" : "POST";
     const url = editingCustomer ? `${apiUrl}/customers/${editingCustomer.id}` : `${apiUrl}/customers`;
     const response = await authedFetch(url, {
@@ -122,6 +139,7 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
       body: JSON.stringify({
         ...(editingCustomer ? {} : { branchCode: "MAIN" }),
         fullName: form.fullName,
+        rut: form.rut || null,
         phone: form.phone || null,
         email: form.email || null,
         companyOrReference: form.companyOrReference || null,
@@ -177,7 +195,7 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
       </div>
 
       <div className="admin-toolbar-inline">
-        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por nombre, código o descuento" />
+        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por nombre, código, RUT o descuento" />
         <Button variant="secondary" onClick={() => void loadCustomers()} disabled={loading}>
           {loading ? <Spinner size="sm" /> : "Buscar"}
         </Button>
@@ -185,16 +203,17 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
       </div>
 
       {loading ? (
-        <TableSkeleton rows={5} cols={7} />
+        <TableSkeleton rows={5} cols={8} />
       ) : (
         <DataTable>
           <thead>
-            <tr><th>Código</th><th>Cliente</th><th>Contacto</th><th>Lista</th><th>Descuento</th><th>Estado</th><th>Acciones</th></tr>
+            <tr><th>Código</th><th>RUT</th><th>Cliente</th><th>Contacto</th><th>Lista</th><th>Descuento</th><th>Estado</th><th>Acciones</th></tr>
           </thead>
           <tbody>
             {customers.map((customer) => (
               <tr key={customer.id} className={customer.isActive ? "" : "table-row-dim"}>
                 <td>{customer.code}</td>
+                <td>{customer.rut ?? "—"}</td>
                 <td>
                   <div className="table-cell-primary">
                     <strong>{customer.fullName}</strong>
@@ -225,7 +244,7 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
               </tr>
             ))}
             {customers.length === 0 ? (
-              <tr><td colSpan={7} className="table-empty">Sin clientes.</td></tr>
+              <tr><td colSpan={8} className="table-empty">Sin clientes.</td></tr>
             ) : null}
           </tbody>
         </DataTable>
@@ -240,6 +259,16 @@ export function CustomersForm({ accessToken, apiUrl, currentUserRole }: Customer
           <label className="field" style={{ flex: 1, minWidth: "220px" }}>
             <span>Nombre</span>
             <Input value={form.fullName} onChange={(e) => setForm((prev) => ({ ...prev, fullName: e.target.value }))} />
+          </label>
+          <label className="field" style={{ width: "180px" }}>
+            <span>RUT</span>
+            <Input
+              value={form.rut}
+              onChange={(e) => { setForm((prev) => ({ ...prev, rut: e.target.value })); setRutError(""); }}
+              onBlur={handleRutBlur}
+              placeholder="12.345.678-9"
+            />
+            {rutError ? <span className="field-error">{rutError}</span> : null}
           </label>
           <label className="field" style={{ flex: 1, minWidth: "220px" }}>
             <span>Referencia / empresa</span>

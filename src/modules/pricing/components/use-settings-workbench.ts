@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { CutScrapLookupPolicy, ScrapLocationPolicy, ScrapPolicy, SoftHoldPolicy } from "./pricing-workbench.shared-types";
+import type { CutScrapLookupPolicy, CutSheetPolicy, ScrapLocationPolicy, ScrapPolicy, SoftHoldPolicy } from "./pricing-workbench.shared-types";
 
 type UseSettingsWorkbenchArgs = {
   apiUrl: string;
@@ -15,6 +15,7 @@ export function useSettingsWorkbench({ apiUrl, accessToken }: UseSettingsWorkben
   const [settingsStatus, setSettingsStatus] = useState("");
   const [cutScrapPolicy, setCutScrapPolicy] = useState<CutScrapLookupPolicy | null>(null);
   const [softHoldPolicy, setSoftHoldPolicy] = useState<SoftHoldPolicy | null>(null);
+  const [cutSheetPolicy, setCutSheetPolicy] = useState<CutSheetPolicy | null>(null);
 
   async function authedFetch(url: string, options: RequestInit = {}) {
     const headers = new Headers(options.headers ?? {});
@@ -95,6 +96,33 @@ export function useSettingsWorkbench({ apiUrl, accessToken }: UseSettingsWorkben
     }
   }
 
+  async function loadCutSheetPolicy() {
+    const response = await authedFetch(`${apiUrl}/settings/cut-sheet-policy`);
+    if (!response.ok) return;
+    const data = (await response.json()) as CutSheetPolicy;
+    setCutSheetPolicy(data);
+  }
+
+  async function handleUpdateCutSheetPolicy(updates: Partial<CutSheetPolicy>, loadingKey: (value: string | null) => void) {
+    loadingKey("cutSheetPolicy");
+    try {
+      const response = await authedFetch(`${apiUrl}/settings/cut-sheet-policy`, {
+        method: "PUT",
+        body: JSON.stringify(updates)
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { message?: string };
+        setSettingsStatus(body.message ?? `Error: HTTP ${response.status}`);
+        return;
+      }
+      const saved = (await response.json()) as CutSheetPolicy;
+      setCutSheetPolicy(saved);
+      setSettingsStatus("Política de hoja de corte actualizada.");
+    } finally {
+      loadingKey(null);
+    }
+  }
+
   return {
     scrapPolicy,
     setScrapPolicy,
@@ -105,9 +133,13 @@ export function useSettingsWorkbench({ apiUrl, accessToken }: UseSettingsWorkben
     setCutScrapPolicy,
     softHoldPolicy,
     setSoftHoldPolicy,
+    cutSheetPolicy,
+    setCutSheetPolicy,
     loadScrapPolicy,
+    loadCutSheetPolicy,
     handleUpdateScrapPolicy,
     handleUpdateCutScrapPolicy,
-    handleUpdateSoftHoldPolicy
+    handleUpdateSoftHoldPolicy,
+    handleUpdateCutSheetPolicy
   };
 }

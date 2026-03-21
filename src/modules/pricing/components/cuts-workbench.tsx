@@ -21,6 +21,7 @@ type CutJobRow = {
   id: string;
   saleId: string;
   saleLineId: string;
+  quoteCode: string | null;
   status: CutJobStatus;
   cutAt: string | null;
   requestedWidthM: number;
@@ -90,6 +91,7 @@ type CutsWorkbenchProps = {
   cutPageCount: number;
   totalCuts: number;
   cutFilterStatus: CutJobStatus | "ALL";
+  cutSearch: string;
   compatibleScrapsStatus: string;
   scrapPolicy: ScrapPolicy | null;
   cutScrapPolicy: CutScrapLookupPolicy | null;
@@ -106,6 +108,7 @@ type CutsWorkbenchProps = {
   softHoldPolicy: SoftHoldPolicy | null;
   getCutStatusLabel: (status: string) => string;
   onSetCutFilterStatus: (value: CutJobStatus | "ALL") => void;
+  onSetCutSearch: (value: string) => void;
   onPrevCutPage: () => void;
   onNextCutPage: () => void;
   onRefreshCutJobs: () => void;
@@ -116,10 +119,9 @@ type CutsWorkbenchProps = {
   onClosePreCutLocation: () => void;
   onCloseCompatibleDialog: () => void;
   onSkipCompatibleScraps: (cutJobId: string) => void;
-  onAllocateCompatibleScrap: (saleId: string, saleLineId: string, scrapId: string) => void;
+  onAllocateCompatibleScrap: (saleId: string, saleLineId: string, scrapId: string) => Promise<boolean>;
   onCreateSoftHold: (scrapId: string, saleId: string, saleLineId: string) => void;
   onReleaseSoftHold: (scrapId: string) => void;
-  onCompatibleStatusChange: (value: string) => void;
 };
 
 export function CutsWorkbench({
@@ -130,6 +132,7 @@ export function CutsWorkbench({
   cutPageCount,
   totalCuts,
   cutFilterStatus,
+  cutSearch,
   compatibleScrapsStatus,
   scrapPolicy,
   cutScrapPolicy,
@@ -146,6 +149,7 @@ export function CutsWorkbench({
   softHoldPolicy,
   getCutStatusLabel,
   onSetCutFilterStatus,
+  onSetCutSearch,
   onPrevCutPage,
   onNextCutPage,
   onRefreshCutJobs,
@@ -158,8 +162,7 @@ export function CutsWorkbench({
   onSkipCompatibleScraps,
   onAllocateCompatibleScrap,
   onCreateSoftHold,
-  onReleaseSoftHold,
-  onCompatibleStatusChange
+  onReleaseSoftHold
 }: CutsWorkbenchProps) {
   const [selectedCutJobId, setSelectedCutJobId] = useState<string | null>(null);
 
@@ -206,9 +209,15 @@ export function CutsWorkbench({
                       <StatusPill tone={selectedCutTone}>{getCutStatusLabel(selectedCutJob.status)}</StatusPill>
                     </div>
                     <div className="ti-sales-summary__row">
-                      <span>Venta</span>
-                      <strong>{selectedCutJob.saleId.slice(0, 8).toUpperCase()}</strong>
+                      <span>OC</span>
+                      <strong>{selectedCutJob.quoteCode ?? selectedCutJob.saleId.slice(0, 8).toUpperCase()}</strong>
                     </div>
+                    {selectedCutJob.quoteCode ? (
+                      <div className="ti-sales-summary__row">
+                        <span style={{ fontSize: "0.82em", color: "var(--muted)" }}>saleId</span>
+                        <span style={{ fontSize: "0.82em", color: "var(--muted)" }}>{selectedCutJob.saleId.slice(0, 8)}</span>
+                      </div>
+                    ) : null}
                     <div className="ti-sales-summary__row">
                       <span>SKU</span>
                       <strong>{selectedCutJob.skuCode}</strong>
@@ -287,31 +296,38 @@ export function CutsWorkbench({
           <WorkbenchSection
             title="Cortes"
             className="ti-cuts-list-section"
-            actions={(
-              <>
-                <Button variant={cutFilterStatus === "PENDING" ? "primary" : "secondary"} onClick={() => onSetCutFilterStatus("PENDING")}>
-                  Pendientes
-                </Button>
-                <Button variant={cutFilterStatus === "IN_PROGRESS" ? "primary" : "secondary"} onClick={() => onSetCutFilterStatus("IN_PROGRESS")}>
-                  En proceso
-                </Button>
-                <Button variant={cutFilterStatus === "CUT" ? "primary" : "secondary"} onClick={() => onSetCutFilterStatus("CUT")}>
-                  Cortados
-                </Button>
-                <Button variant={cutFilterStatus === "DELIVERED" ? "primary" : "secondary"} onClick={() => onSetCutFilterStatus("DELIVERED")}>
-                  Entregados
-                </Button>
-                <Button variant={cutFilterStatus === "ALL" ? "primary" : "secondary"} onClick={() => onSetCutFilterStatus("ALL")}>
-                  Todos
-                </Button>
-                <Button onClick={onRefreshCutJobs} disabled={loadingMenu}>
-                  {loadingMenu ? <Spinner size="sm" /> : "Refrescar"}
-                </Button>
-              </>
-            )}
+            actions={null}
           >
             {cutsStatus ? <p className="status-note" style={{ margin: "0 0 0.75rem" }}>{cutsStatus}</p> : null}
             {compatibleScrapsStatus ? <p className="status-note" style={{ margin: "0 0 0.75rem" }}>{compatibleScrapsStatus}</p> : null}
+
+            <div className="ti-qb-toolbar" style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center", marginBottom: "0.75rem" }}>
+              <div style={{ display: "flex", gap: "0.25rem" }}>
+                <Button variant={cutFilterStatus === "PENDING" ? "primary" : "secondary"} onClick={() => onSetCutFilterStatus("PENDING")}>Pendientes</Button>
+                <Button variant={cutFilterStatus === "IN_PROGRESS" ? "primary" : "secondary"} onClick={() => onSetCutFilterStatus("IN_PROGRESS")}>En proceso</Button>
+                <Button variant={cutFilterStatus === "CUT" ? "primary" : "secondary"} onClick={() => onSetCutFilterStatus("CUT")}>Cortados</Button>
+                <Button variant={cutFilterStatus === "DELIVERED" ? "primary" : "secondary"} onClick={() => onSetCutFilterStatus("DELIVERED")}>Entregados</Button>
+                <Button variant={cutFilterStatus === "ALL" ? "primary" : "secondary"} onClick={() => onSetCutFilterStatus("ALL")}>Todos</Button>
+              </div>
+              <Input
+                placeholder="COT-123 o ID venta"
+                value={cutSearch}
+                onChange={(e) => onSetCutSearch(e.target.value)}
+                style={{ maxWidth: "10rem" }}
+              />
+              <Button variant="secondary" onClick={onRefreshCutJobs} disabled={loadingMenu}>
+                {loadingMenu ? <Spinner size="sm" /> : "Buscar"}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  onSetCutSearch("");
+                  onSetCutFilterStatus("PENDING");
+                }}
+              >
+                Limpiar
+              </Button>
+            </div>
 
             <div className="ti-cuts-list-region">
               {loadingMenu && cutJobs.length === 0 ? (
@@ -319,7 +335,7 @@ export function CutsWorkbench({
               ) : cutJobs.length > 0 ? (
                 <DataTable>
                   <thead>
-                    <tr><th>Corte</th><th>Venta</th><th>SKU</th><th>Medida</th><th>Cant.</th><th>Estado</th><th>Marcado</th><th>Acciones</th></tr>
+                    <tr><th>Corte</th><th>OC</th><th>SKU</th><th>Medida</th><th>Cant.</th><th>Estado</th><th>Marcado</th><th>Acciones</th></tr>
                   </thead>
                   <tbody>
                     {cutJobs.map((row) => (
@@ -330,7 +346,7 @@ export function CutsWorkbench({
                         onClick={() => setSelectedCutJobId(row.id)}
                       >
                         <td>{row.id.slice(0, 8).toUpperCase()}</td>
-                        <td>{row.saleId.slice(0, 8).toUpperCase()}</td>
+                        <td title={`Venta: ${row.saleId.slice(0, 8)}`}>{row.quoteCode ?? row.saleId.slice(0, 8).toUpperCase()}</td>
                         <td>
                           <div className="table-cell-primary">
                             <strong>{row.skuCode}</strong>
@@ -348,28 +364,34 @@ export function CutsWorkbench({
                         <td>
                           <div className="actions-cell">
                             {(row.status === "PENDING" || row.status === "IN_PROGRESS") && cutScrapPolicy && cutScrapPolicy.mode !== "OFF" ? (
-                              <Button
-                                variant="secondary"
+                              <button
+                                type="button"
+                                className="t-btn t-btn-secondary ti-icon-button"
+                                title={cutScrapPolicy.mode === "MANUAL" ? "Buscar retazos" : "Verificar retazos"}
+                                aria-label="Verificar retazos"
+                                disabled={loadingActionId === `compat-${row.id}`}
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   onCheckCompatibleScraps(row.id);
                                 }}
-                                disabled={loadingActionId === `compat-${row.id}`}
                               >
-                                {loadingActionId === `compat-${row.id}` ? <Spinner size="sm" /> : cutScrapPolicy.mode === "MANUAL" ? "Buscar retazos" : "Verificar retazos"}
-                              </Button>
+                                {loadingActionId === `compat-${row.id}` ? <Spinner size="sm" /> : <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="3.8" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M10.2 10.2l2.8 2.8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>}
+                              </button>
                             ) : null}
                             {row.status === "PENDING" || row.status === "IN_PROGRESS" ? (
-                              <Button
-                                variant="secondary"
+                              <button
+                                type="button"
+                                className="t-btn t-btn-primary ti-icon-button ti-icon-button--accent"
+                                title="Marcar cortado"
+                                aria-label="Marcar cortado"
+                                disabled={loadingActionId === row.id}
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   onMarkCutClick(row.id);
                                 }}
-                                disabled={loadingActionId === row.id}
                               >
-                                {loadingActionId === row.id ? <Spinner size="sm" /> : "Marcar cortado"}
-                              </Button>
+                                {loadingActionId === row.id ? <Spinner size="sm" /> : <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8.5l3.5 3.5L13 4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                              </button>
                             ) : (
                               <span className="ti-sale-line-lock">Solo lectura</span>
                             )}
@@ -440,6 +462,7 @@ export function CutsWorkbench({
         open={isCompatibleDialogOpen}
         onClose={() => { if (!isRequireDecisionMode) onCloseCompatibleDialog(); }}
         title={isRequireDecisionMode ? "Decision requerida: retazos compatibles" : "Retazos compatibles encontrados"}
+        panelClassName="dialog-panel--wide ti-compat-scraps-dialog"
       >
         {compatibleScrapsResult && compatibleScrapsResult.lines.length > 0 ? (
           <>
@@ -456,7 +479,7 @@ export function CutsWorkbench({
                   </p>
                   <table className="data-table">
                     <thead>
-                      <tr><th>Retazo</th><th>Medida</th><th>Excedente</th><th>Ubicacion</th><th>Estado</th><th>Accion</th></tr>
+                      <tr><th>Retazo</th><th>Medida</th><th>Exc.</th><th>Ubic.</th><th>Estado</th><th>Accion</th></tr>
                     </thead>
                     <tbody>
                       {line.suggestions.map((s) => {
@@ -478,36 +501,50 @@ export function CutsWorkbench({
                                 <span style={{ color: "var(--ok, green)", fontSize: "0.85em" }}>Disponible</span>
                               )}
                             </td>
-                            <td style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap" }}>
-                              <Button
-                                variant="secondary"
-                                onClick={() => {
-                                  onAllocateCompatibleScrap(compatibleScrapsResult.saleId, line.saleLineId, s.scrapId);
-                                  onCloseCompatibleDialog();
-                                  onCompatibleStatusChange(`Retazo ${s.scrapId.slice(0, 8)} asignado a linea.`);
-                                }}
-                                disabled={!!loadingActionId}
-                              >
-                                {loadingActionId === s.scrapId ? <Spinner size="sm" /> : "Usar"}
-                              </Button>
-                              {softHoldPolicy?.enabled && !isHeld && (
-                                <Button
-                                  variant="secondary"
-                                  onClick={() => onCreateSoftHold(s.scrapId, compatibleScrapsResult.saleId, line.saleLineId)}
+                            <td>
+                              <div className="actions-cell">
+                                <button
+                                  type="button"
+                                  className="t-btn t-btn-primary ti-icon-button ti-icon-button--accent"
+                                  title="Usar retazo"
+                                  aria-label="Usar retazo"
                                   disabled={!!loadingActionId}
+                                  onClick={async () => {
+                                    const assigned = await onAllocateCompatibleScrap(
+                                      compatibleScrapsResult.saleId,
+                                      line.saleLineId,
+                                      s.scrapId
+                                    );
+                                    if (assigned) onCloseCompatibleDialog();
+                                  }}
                                 >
-                                  {loadingActionId === `hold-${s.scrapId}` ? <Spinner size="sm" /> : "Reservar"}
-                                </Button>
-                              )}
-                              {isHeld && (
-                                <Button
-                                  variant="secondary"
-                                  onClick={() => onReleaseSoftHold(s.scrapId)}
-                                  disabled={!!loadingActionId}
-                                >
-                                  {loadingActionId === `release-${s.scrapId}` ? <Spinner size="sm" /> : "Liberar"}
-                                </Button>
-                              )}
+                                  {loadingActionId === s.scrapId ? <Spinner size="sm" /> : <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><polyline points="13 4.5 6.5 11.5 3 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                                </button>
+                                {softHoldPolicy?.enabled && !isHeld && (
+                                  <button
+                                    type="button"
+                                    className="t-btn t-btn-secondary ti-icon-button"
+                                    title="Reservar"
+                                    aria-label="Reservar"
+                                    disabled={!!loadingActionId}
+                                    onClick={() => onCreateSoftHold(s.scrapId, compatibleScrapsResult.saleId, line.saleLineId)}
+                                  >
+                                    {loadingActionId === `hold-${s.scrapId}` ? <Spinner size="sm" /> : <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="3" y="4" width="10" height="8" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.4"/><path d="M5.5 4V3a2.5 2.5 0 0 1 5 0v1" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>}
+                                  </button>
+                                )}
+                                {isHeld && (
+                                  <button
+                                    type="button"
+                                    className="t-btn t-btn-secondary ti-icon-button ti-icon-button--danger"
+                                    title="Liberar reserva"
+                                    aria-label="Liberar reserva"
+                                    disabled={!!loadingActionId}
+                                    onClick={() => onReleaseSoftHold(s.scrapId)}
+                                  >
+                                    {loadingActionId === `release-${s.scrapId}` ? <Spinner size="sm" /> : <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="3" y="4" width="10" height="8" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.4"/><path d="M5.5 4V3a2.5 2.5 0 0 1 5 0v1" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M4 4l8 8" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>}
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );

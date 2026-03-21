@@ -53,19 +53,25 @@ export function useLabelsWorkbench({
     return response.text();
   }
 
-  async function openAuthedHtmlDocument(url: string) {
-    const html = await fetchAuthedText(url);
-    const win = window.open("", "_blank", "noreferrer");
-    if (!win) return;
-    win.document.open();
-    win.document.write(html);
-    win.document.close();
+  async function openAuthedHtmlDocument(url: string, existingWin?: Window | null) {
+    const win = existingWin ?? window.open("", "_blank", "noreferrer");
+    if (!win) {
+      setLabelStatus("El navegador bloqueó la ventana emergente. Permite ventanas emergentes para esta página e intenta de nuevo.");
+      return;
+    }
+    try {
+      const html = await fetchAuthedText(url);
+      const blob = new Blob([html], { type: "text/html; charset=utf-8" });
+      win.location.href = URL.createObjectURL(blob);
+    } catch {
+      win.close();
+    }
   }
 
-  async function openBatchPdf(labelIds: string[]) {
+  async function openBatchPdf(labelIds: string[], existingWin?: Window | null) {
     if (labelIds.length === 0) return;
     const url = `${apiUrl}/labels/batch-pdf?labelIds=${labelIds.join(",")}`;
-    await openAuthedHtmlDocument(url);
+    await openAuthedHtmlDocument(url, existingWin);
   }
 
   async function registerBatchPrint(labelIds: string[]) {
@@ -123,9 +129,14 @@ export function useLabelsWorkbench({
 
   async function handlePrintSelectedLabels() {
     if (selectedLabelIds.length === 0) return;
+    const win = window.open("", "_blank", "noreferrer");
+    if (!win) {
+      setLabelStatus("El navegador bloqueó la ventana emergente. Permite ventanas emergentes para esta página e intenta de nuevo.");
+      return;
+    }
     setLoadingMenu(true);
     try {
-      await openBatchPdf(selectedLabelIds);
+      await openBatchPdf(selectedLabelIds, win);
       await registerBatchPrint(selectedLabelIds);
       setSelectedLabelIds([]);
       setLabelStatus(`${selectedLabelIds.length} etiqueta(s) enviadas a imprimir.`);

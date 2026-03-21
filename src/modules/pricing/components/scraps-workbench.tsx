@@ -26,6 +26,7 @@ type ScrapRow = {
   skuCode: string;
   locationCode: string | null;
   quoteId: string | null;
+  quoteCode: string | null;
   createdAt: string;
 };
 
@@ -34,6 +35,7 @@ type ScrapsWorkbenchProps = {
   scrapStatus: string;
   scraps: ScrapRow[];
   scrapFilterStatus: ScrapFilterStatus;
+  scrapSearchQuery: string;
   scrapPage: number;
   scrapPageCount: number;
   totalScraps: number;
@@ -45,6 +47,7 @@ type ScrapsWorkbenchProps = {
   loadingModal: boolean;
   getScrapStatusLabel: (status: string) => string;
   onSetScrapFilterStatus: (value: ScrapFilterStatus) => void;
+  onScrapSearchQueryChange: (value: string) => void;
   onSelectScrap: (scrapId: string) => void;
   onPrevScrapPage: () => void;
   onNextScrapPage: () => void;
@@ -57,6 +60,9 @@ type ScrapsWorkbenchProps = {
   onModalLocationCodeChange: (value: string) => void;
   onConfirmAssignLocation: () => void;
   onCloseAssignLocation: () => void;
+  labelPreviewHtml: string | null;
+  onCloseLabelPreview: () => void;
+  onNavigateToSale?: (quoteCode: string) => void;
 };
 
 export function ScrapsWorkbench({
@@ -64,6 +70,7 @@ export function ScrapsWorkbench({
   scrapStatus,
   scraps,
   scrapFilterStatus,
+  scrapSearchQuery,
   scrapPage,
   scrapPageCount,
   totalScraps,
@@ -75,6 +82,7 @@ export function ScrapsWorkbench({
   loadingModal,
   getScrapStatusLabel,
   onSetScrapFilterStatus,
+  onScrapSearchQueryChange,
   onSelectScrap,
   onPrevScrapPage,
   onNextScrapPage,
@@ -86,7 +94,10 @@ export function ScrapsWorkbench({
   onCreateScrapLabel,
   onModalLocationCodeChange,
   onConfirmAssignLocation,
-  onCloseAssignLocation
+  onCloseAssignLocation,
+  labelPreviewHtml,
+  onCloseLabelPreview,
+  onNavigateToSale
 }: ScrapsWorkbenchProps) {
   const [selectedScrapRowId, setSelectedScrapRowId] = useState<string | null>(null);
 
@@ -156,7 +167,16 @@ export function ScrapsWorkbench({
                     </div>
                     <div className="ti-sales-summary__row">
                       <span>Origen</span>
-                      <strong>{selectedScrap.quoteId ? "Cotización vinculada" : "Sin cotización"}</strong>
+                      <strong>{selectedScrap.quoteCode ?? (selectedScrap.quoteId ? selectedScrap.quoteId.slice(0, 8) : "Sin cotización")}</strong>
+                      {selectedScrap.quoteCode && onNavigateToSale ? (
+                        <Button
+                          variant="secondary"
+                          onClick={() => onNavigateToSale(selectedScrap.quoteCode!)}
+                          style={{ padding: "0.1rem 0.5rem", fontSize: "0.78em", marginLeft: "0.4rem" }}
+                        >
+                          Ver venta
+                        </Button>
+                      ) : null}
                     </div>
                     <div className="ti-sales-summary__row">
                       <span>Generado</span>
@@ -199,6 +219,12 @@ export function ScrapsWorkbench({
             className="ti-scraps-list-section"
             actions={(
               <>
+                <Input
+                  value={scrapSearchQuery}
+                  onChange={(e) => onScrapSearchQueryChange(e.target.value)}
+                  placeholder="Buscar por COT-N"
+                  style={{ maxWidth: "160px" }}
+                />
                 <Button variant={scrapFilterStatus === "ALL" ? "primary" : "secondary"} onClick={() => onSetScrapFilterStatus("ALL")}>
                   Todos
                 </Button>
@@ -252,7 +278,7 @@ export function ScrapsWorkbench({
                           }}
                         />
                       </th>
-                      <th>Retazo</th><th>Estado</th><th>SKU</th><th>Medida</th><th>Área</th><th>Ubicación</th><th>Acciones</th>
+                      <th>Retazo</th><th>Origen</th><th>Estado</th><th>SKU</th><th>Medida</th><th>Área</th><th>Ubicación</th><th>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -276,6 +302,7 @@ export function ScrapsWorkbench({
                           ) : null}
                         </td>
                         <td>{row.id.slice(0, 8).toUpperCase()}</td>
+                        <td style={{ fontSize: "0.85em" }}>{row.quoteCode ?? "—"}</td>
                         <td>
                           <StatusPill tone={row.status === "STORED" ? "success" : row.status === "PENDING_INBOUND" || row.status === "PENDING_STORAGE" ? "warning" : "neutral"}>
                             {getScrapStatusLabel(row.status)}
@@ -365,6 +392,36 @@ export function ScrapsWorkbench({
           </Button>
           <Button variant="secondary" onClick={onCloseAssignLocation} disabled={loadingModal}>Cancelar</Button>
         </div>
+      </Dialog>
+
+      <Dialog
+        open={labelPreviewHtml !== null}
+        onClose={onCloseLabelPreview}
+        title="Vista previa de etiqueta"
+        panelClassName="dialog-panel--wide"
+      >
+        {labelPreviewHtml ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <iframe
+              id="scrap-label-preview-iframe"
+              srcDoc={labelPreviewHtml}
+              style={{ width: "100%", height: "280px", border: "1px solid var(--border)", borderRadius: "6px", background: "#fff" }}
+              title="Etiqueta preview"
+            />
+            <div className="inline-actions">
+              <Button
+                variant="primary"
+                onClick={() => {
+                  const iframe = document.getElementById("scrap-label-preview-iframe") as HTMLIFrameElement | null;
+                  iframe?.contentWindow?.print();
+                }}
+              >
+                Imprimir
+              </Button>
+              <Button variant="secondary" onClick={onCloseLabelPreview}>Cerrar</Button>
+            </div>
+          </div>
+        ) : null}
       </Dialog>
     </>
   );

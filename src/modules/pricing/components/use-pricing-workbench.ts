@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo } from "react";
 
 import { roundClpFront } from "./pricing-workbench.helpers";
 import type { QuoteScrapOpportunityRow } from "./pricing-workbench.types";
@@ -11,9 +11,9 @@ type UsePricingWorkbenchArgs = {
   quoteItems: QuoteItem[];
   activeQuoteItemId: string | null;
   quoteItemMatches: QuoteScrapOpportunityRow[];
-  operatorMargin: number;
+  commercialAdjustmentPct: number;
+  installationAmount: number;
   onActiveQuoteItemIdChange: (itemId: string | null) => void;
-  onLoadQuoteScrapOpportunityPreview: (itemId?: string) => void;
 };
 
 export function usePricingWorkbench({
@@ -21,9 +21,9 @@ export function usePricingWorkbench({
   quoteItems,
   activeQuoteItemId,
   quoteItemMatches,
-  operatorMargin,
+  commercialAdjustmentPct,
+  installationAmount,
   onActiveQuoteItemIdChange,
-  onLoadQuoteScrapOpportunityPreview
 }: UsePricingWorkbenchArgs) {
   useEffect(() => {
     if (quoteItems.length === 0) {
@@ -45,9 +45,25 @@ export function usePricingWorkbench({
     [quoteItemMatches, activeQuoteItemId]
   );
 
+  const quoteOpportunityEligibleCount = useMemo(
+    () =>
+      quoteItems.filter((item) => {
+        const width = Number(item.widthM);
+        const height = Number(item.heightM);
+        const qty = Number(item.quantity);
+        return Boolean(item.skuCode) && Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0 && Number.isFinite(qty) && qty > 0;
+      }).length,
+    [quoteItems]
+  );
+
+  const baseSubtotal = useMemo(
+    () => quoteItems.reduce((sum, item) => sum + (item.subtotal || 0), 0),
+    [quoteItems]
+  );
+  const commercialAdjustmentAmount = Math.round(baseSubtotal * (commercialAdjustmentPct / 100));
   const quoteSubtotal = useMemo(
-    () => quoteItems.reduce((sum, item) => sum + (item.subtotal || 0), 0) * (1 - operatorMargin / 100),
-    [quoteItems, operatorMargin]
+    () => baseSubtotal + commercialAdjustmentAmount + installationAmount,
+    [baseSubtotal, commercialAdjustmentAmount, installationAmount]
   );
 
   const quoteTax = useMemo(() => Math.round(quoteSubtotal * 0.19), [quoteSubtotal]);
@@ -74,23 +90,12 @@ export function usePricingWorkbench({
   const quoteReady = quoteItems.length > 0 && quoteItems.every((item) => item.calcStatus === "ok");
   const pricingDocumentStatus = quoteReady ? "Calculada" : "Cotización";
   const pricingDocumentTone: "success" | "draft" = quoteReady ? "success" : "draft";
-  const loadQuoteScrapOpportunityPreviewRef = useRef(onLoadQuoteScrapOpportunityPreview);
-
-  useEffect(() => {
-    loadQuoteScrapOpportunityPreviewRef.current = onLoadQuoteScrapOpportunityPreview;
-  }, [onLoadQuoteScrapOpportunityPreview]);
-
-  useEffect(() => {
-    if (activeMenu !== "pricing" || !activeQuoteItemId) return;
-    const timer = window.setTimeout(() => {
-      loadQuoteScrapOpportunityPreviewRef.current(activeQuoteItemId);
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [activeMenu, activeQuoteItemId]);
+  // bug-04: scrap search is manual only — no auto-trigger on item selection
 
   return {
     activeQuoteItem,
     activeQuoteItemOpportunities,
+    quoteOpportunityEligibleCount,
     quoteSubtotal,
     quoteTax,
     quoteTotal,

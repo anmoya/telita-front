@@ -20,6 +20,7 @@ type CutsWorkbenchContainerProps = {
   cutPageCount: number;
   totalCuts: number;
   cutFilterStatus: CutJobStatus | "ALL";
+  cutSearch: string;
   compatibleScrapsStatus: string;
   scrapPolicy: ScrapPolicy | null;
   cutScrapPolicy: CutScrapLookupPolicy | null;
@@ -36,6 +37,7 @@ type CutsWorkbenchContainerProps = {
   softHoldPolicy: SoftHoldPolicy | null;
   statusLabels: StatusLabelsByEntity;
   onSetCutFilterStatus: (value: CutJobStatus | "ALL") => void;
+  onSetCutSearch: (value: string) => void;
   onPrevCutPage: () => void;
   onNextCutPage: () => void;
   onRefreshCutJobs: () => void;
@@ -46,10 +48,9 @@ type CutsWorkbenchContainerProps = {
   onClosePreCutLocation: () => void;
   onCloseCompatibleDialog: () => void;
   onSkipCompatibleScraps: (cutJobId: string) => void;
-  onAllocateCompatibleScrap: (saleId: string, saleLineId: string, scrapId: string) => void;
+  onAllocateCompatibleScrap: (saleId: string, saleLineId: string, scrapId: string) => Promise<boolean>;
   onCreateSoftHold: (scrapId: string, saleId: string, saleLineId?: string) => void;
   onReleaseSoftHold: (scrapId: string) => void;
-  onCompatibleStatusChange: (value: string) => void;
 };
 
 export function CutsWorkbenchContainer({

@@ -3,20 +3,22 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { AutoScrapAssignmentPreview } from "./pricing-workbench.types";
-import type { QuoteItemCategory, SaleLineCompatibleScrapsResponse, SaleLineDraft, SaleLineRow, SaleRow, ScrapMatchRow } from "./pricing-workbench.shared-types";
+import type { CutSheetPolicy, QuoteItemCategory, SaleLineCompatibleScrapsResponse, SaleLineDraft, SaleLineRow, SaleRow, ScrapMatchRow } from "./pricing-workbench.shared-types";
 
 type UseSalesWorkbenchArgs = {
   apiUrl: string;
   accessToken: string;
   activeMenu: string;
+  cutSheetPolicy: CutSheetPolicy | null;
+  initialSearchQuery?: string;
 };
 
-export function useSalesWorkbench({ apiUrl, accessToken, activeMenu }: UseSalesWorkbenchArgs) {
+export function useSalesWorkbench({ apiUrl, accessToken, activeMenu, cutSheetPolicy, initialSearchQuery }: UseSalesWorkbenchArgs) {
   const [loadingMenu, setLoadingMenu] = useState(false);
   const [loadingActionId, setLoadingActionId] = useState<string | null>(null);
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [salesStatus, setSalesStatus] = useState("");
-  const [salesSearchQuery, setSalesSearchQuery] = useState("");
+  const [salesSearchQuery, setSalesSearchQuery] = useState(initialSearchQuery ?? "");
   const [salesPage, setSalesPage] = useState(1);
   const [saleId, setSaleId] = useState("");
   const [amountPaidInput, setAmountPaidInput] = useState("");
@@ -35,6 +37,8 @@ export function useSalesWorkbench({ apiUrl, accessToken, activeMenu }: UseSalesW
   const [offerPreviewResult, setOfferPreviewResult] = useState<AutoScrapAssignmentPreview | null>(null);
   const [offerPreviewStatus, setOfferPreviewStatus] = useState("");
   const [isOfferPreviewOpen, setIsOfferPreviewOpen] = useState(false);
+  const [docPreviewHtml, setDocPreviewHtml] = useState<string | null>(null);
+  const [cutSheetPromptSaleId, setCutSheetPromptSaleId] = useState<string | null>(null);
 
   async function authedFetch(url: string, options: RequestInit = {}) {
     const headers = new Headers(options.headers ?? {});
@@ -45,8 +49,8 @@ export function useSalesWorkbench({ apiUrl, accessToken, activeMenu }: UseSalesW
     return fetch(url, { ...options, headers });
   }
 
-  async function fetchAuthedText(url: string) {
-    const response = await authedFetch(url);
+  async function fetchAuthedText(url: string, options: RequestInit = {}) {
+    const response = await authedFetch(url, options);
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       throw new Error(text || `HTTP ${response.status}`);
@@ -54,19 +58,18 @@ export function useSalesWorkbench({ apiUrl, accessToken, activeMenu }: UseSalesW
     return response.text();
   }
 
-  async function openAuthedHtmlDocument(url: string) {
-    const html = await fetchAuthedText(url);
-    const win = window.open("", "_blank", "noreferrer");
-    if (!win) return;
-    win.document.open();
-    win.document.write(html);
-    win.document.close();
+  async function openAuthedHtmlDocument(url: string, options: RequestInit = {}) {
+    try {
+      const html = await fetchAuthedText(url, options);
+      setDocPreviewHtml(html);
+    } catch (err) {
+      setSalesStatus(`No se pudo cargar el documento. ${err instanceof Error ? err.message : "Error desconocido"}`);
+    }
   }
 
   async function openBatchPdf(labelIds: string[]) {
     if (labelIds.length === 0) return;
-    const url = `${apiUrl}/labels/batch-pdf?labelIds=${labelIds.join(",")}`;
-    await openAuthedHtmlDocument(url);
+    await openAuthedHtmlDocument(`${apiUrl}/labels/batch-pdf?labelIds=${labelIds.join(",")}`);
   }
 
   async function handleListSales() {
@@ -258,6 +261,35 @@ export function useSalesWorkbench({ apiUrl, accessToken, activeMenu }: UseSalesW
       w.document.open();
       w.document.write(html);
       w.document.close();
+    }
+  }
+
+  function openCutSheetPrompt(targetSaleId: string) {
+    if (cutSheetPolicy?.mode === "DISABLED") {
+      setSalesStatus("La hoja de corte está deshabilitada en configuración.");
+      return;
+    }
+    if (cutSheetPolicy?.mode === "GUIDE_ONLY") {
+      void handlePrintCutSheet(targetSaleId, false);
+      return;
+    }
+    setCutSheetPromptSaleId(targetSaleId);
+  }
+
+  function closeCutSheetPrompt() {
+    setCutSheetPromptSaleId(null);
+  }
+
+  async function handlePrintCutSheet(targetSaleId: string, reserveSuggestedScraps: boolean) {
+    setLoadingActionId(`cut-sheet-${targetSaleId}`);
+    try {
+      await openAuthedHtmlDocument(`${apiUrl}/sales/${targetSaleId}/print/cut-sheet/html`, {
+        method: "POST",
+        body: JSON.stringify({ reserveSuggestedScraps })
+      });
+      setCutSheetPromptSaleId(null);
+    } finally {
+      setLoadingActionId(null);
     }
   }
 
@@ -601,6 +633,13 @@ export function useSalesWorkbench({ apiUrl, accessToken, activeMenu }: UseSalesW
     handleCancelSaleById,
     handlePrintSaleLabels,
     openAuthedHtmlDocument,
+    docPreviewHtml,
+    isCutSheetPromptOpen: Boolean(cutSheetPromptSaleId),
+    cutSheetPromptSaleId,
+    closeDocPreview: () => setDocPreviewHtml(null),
+    openCutSheetPrompt,
+    closeCutSheetPrompt,
+    handlePrintCutSheet,
     setAmountPaidInput,
     handleUpdatePaymentSummary,
     prevPage: () => setSalesPage((page) => Math.max(1, page - 1)),

@@ -41,7 +41,8 @@ type TokenInfo = {
 
 const ALL_MENU_ITEMS: Array<{ key: MenuKey; label: string; roles?: Array<"superadmin" | "admin" | "operador"> }> = [
   { key: "dashboard", label: "Dashboard" },
-  { key: "pricing", label: "Cotizacion" },
+  { key: "historial-cotizaciones", label: "Cotizaciones" },
+  { key: "pricing", label: "Crear Cotizacion" },
   { key: "sales", label: "Ventas" },
   { key: "cuts", label: "Cortes" },
   { key: "scraps", label: "Retazos" },
@@ -52,7 +53,6 @@ const ALL_MENU_ITEMS: Array<{ key: MenuKey; label: string; roles?: Array<"supera
   { key: "listas-precios", label: "Listas Precios", roles: ["superadmin", "admin"] },
   { key: "ubicaciones", label: "Ubicaciones", roles: ["superadmin", "admin"] },
   { key: "categorias-cotizacion", label: "Cat. Cotizacion", roles: ["superadmin", "admin"] },
-  { key: "historial-cotizaciones", label: "Historial Cotiz." },
   { key: "clientes", label: "Clientes", roles: ["superadmin", "admin"] },
   { key: "usuarios", label: "Usuarios", roles: ["superadmin", "admin"] },
   { key: "perfil", label: "Mi perfil" }
@@ -87,7 +87,7 @@ export default function HomePage() {
     [tokenInfo]
   );
 
-  const primaryMenuKeys: MenuKey[] = ["dashboard", "pricing", "sales", "cuts", "scraps", "labels", "audit", "settings"];
+  const primaryMenuKeys: MenuKey[] = ["dashboard", "historial-cotizaciones", "pricing", "sales", "cuts", "scraps", "labels", "audit", "settings"];
   const primaryMenuItems = menuItems.filter((item) => primaryMenuKeys.includes(item.key));
   const adminMenuItems = menuItems.filter((item) => !primaryMenuKeys.includes(item.key));
   const activeMenuLabel = ALL_MENU_ITEMS.find((item) => item.key === activeMenu)?.label ?? "Operacion";

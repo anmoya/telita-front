@@ -2,7 +2,7 @@
 
 import { AutoScrapAssignmentDialog } from "./auto-scrap-assignment-dialog";
 import { SalesWorkbench } from "./sales-workbench";
-import type { CustomerOption, QuoteItemCategory } from "./pricing-workbench.shared-types";
+import type { CustomerOption, CutSheetPolicy, QuoteItemCategory } from "./pricing-workbench.shared-types";
 import { useSalesWorkbench } from "./use-sales-workbench";
 
 type SkuOption = {
@@ -17,7 +17,9 @@ type SalesWorkbenchContainerProps = {
   skuOptions: SkuOption[];
   categories: QuoteItemCategory[];
   customers: CustomerOption[];
+  cutSheetPolicy: CutSheetPolicy | null;
   getSaleStatusLabel: (status: string) => string;
+  initialSearchQuery?: string;
 };
 
 export function SalesWorkbenchContainer({
@@ -27,9 +29,11 @@ export function SalesWorkbenchContainer({
   skuOptions,
   categories,
   customers,
-  getSaleStatusLabel
+  cutSheetPolicy,
+  getSaleStatusLabel,
+  initialSearchQuery
 }: SalesWorkbenchContainerProps) {
-  const sales = useSalesWorkbench({ apiUrl, accessToken, activeMenu });
+  const sales = useSalesWorkbench({ apiUrl, accessToken, activeMenu, initialSearchQuery, cutSheetPolicy });
 
   return (
     <>
@@ -71,10 +75,18 @@ export function SalesWorkbenchContainer({
         onRefreshSales={() => void sales.handleListSales()}
         onConfirmSale={(id) => void sales.handleConfirmSaleById(id)}
         customers={customers}
+        cutSheetPolicy={cutSheetPolicy}
         onUpdateSaleCustomer={(id, customerId) => void sales.handleUpdateSaleCustomer(id, customerId)}
         onCancelSale={(id) => void sales.handleCancelSaleById(id)}
         onPrintSaleLabels={(id) => void sales.handlePrintSaleLabels(id)}
         onOpenDocument={(url) => void sales.openAuthedHtmlDocument(url)}
+        onOpenCutSheetPrompt={(id) => sales.openCutSheetPrompt(id)}
+        onPrintCutSheet={(id, reserveSuggestedScraps) => void sales.handlePrintCutSheet(id, reserveSuggestedScraps)}
+        docPreviewHtml={sales.docPreviewHtml}
+        onCloseDocPreview={sales.closeDocPreview}
+        isCutSheetPromptOpen={sales.isCutSheetPromptOpen}
+        cutSheetPromptSaleId={sales.cutSheetPromptSaleId}
+        onCloseCutSheetPrompt={sales.closeCutSheetPrompt}
         onAmountPaidInputChange={sales.setAmountPaidInput}
         onUpdatePaymentSummary={() => void sales.handleUpdatePaymentSummary()}
         onPrevPage={sales.prevPage}

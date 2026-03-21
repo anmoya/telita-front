@@ -26,6 +26,7 @@ type ScrapsWorkbenchContainerProps = {
   setActiveModal: (value: ActiveModal) => void;
   setModalLocationCode: (value: string) => void;
   setModalStatus: (value: string) => void;
+  onNavigateToSale?: (quoteCode: string) => void;
 };
 
 export function ScrapsWorkbenchContainer({
@@ -48,7 +49,8 @@ export function ScrapsWorkbenchContainer({
   setScrapId,
   setActiveModal,
   setModalLocationCode,
-  setModalStatus
+  setModalStatus,
+  onNavigateToSale
 }: ScrapsWorkbenchContainerProps) {
   const scrapsWorkbench = useScrapsWorkbench({
     apiUrl,
@@ -72,6 +74,7 @@ export function ScrapsWorkbenchContainer({
       scrapStatus={scrapStatus}
       scraps={scraps}
       scrapFilterStatus={scrapsWorkbench.scrapFilterStatus}
+      scrapSearchQuery={scrapsWorkbench.scrapSearchQuery}
       scrapPage={scrapsWorkbench.scrapPage}
       scrapPageCount={scrapsWorkbench.scrapPageCount}
       totalScraps={scrapsWorkbench.totalScraps}
@@ -83,6 +86,7 @@ export function ScrapsWorkbenchContainer({
       loadingModal={loadingModal}
       getScrapStatusLabel={(status) => getStatusLabel(statusLabels, "scrap", status)}
       onSetScrapFilterStatus={scrapsWorkbench.setScrapFilterStatus}
+      onScrapSearchQueryChange={scrapsWorkbench.setScrapSearchQuery}
       onSelectScrap={setScrapId}
       onPrevScrapPage={scrapsWorkbench.prevScrapPage}
       onNextScrapPage={scrapsWorkbench.nextScrapPage}
@@ -99,6 +103,9 @@ export function ScrapsWorkbenchContainer({
       onModalLocationCodeChange={setModalLocationCode}
       onConfirmAssignLocation={() => void scrapsWorkbench.handleModalAssignLocation()}
       onCloseAssignLocation={() => setActiveModal(null)}
+      labelPreviewHtml={scrapsWorkbench.labelPreviewHtml}
+      onCloseLabelPreview={scrapsWorkbench.closeLabelPreview}
+      onNavigateToSale={onNavigateToSale}
     />
   );
 }

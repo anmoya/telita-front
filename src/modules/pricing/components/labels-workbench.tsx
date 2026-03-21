@@ -112,9 +112,9 @@ export function LabelsWorkbench({
   }
 
   function getLabelOrigin(row: LabelRow) {
-    if (row.scrapId) return { title: "Retazo", value: row.scrapId };
-    if (row.quoteId) return { title: "Cotización", value: row.quoteId };
-    if (row.saleLineId) return { title: "Línea de venta", value: row.saleLineId };
+    if (row.quoteCode) return { title: "OC", value: row.quoteCode };
+    if (row.scrapId) return { title: "Retazo", value: row.scrapId.slice(0, 8).toUpperCase() };
+    if (row.saleLineId) return { title: "Línea", value: row.saleLineId.slice(0, 8).toUpperCase() };
     return { title: "Origen", value: "Sin vínculo" };
   }
 
@@ -173,11 +173,7 @@ export function LabelsWorkbench({
                     </div>
                     <div className="ti-sales-summary__row">
                       <span>{getLabelOrigin(selectedLabel).title}</span>
-                      <strong>
-                        {typeof getLabelOrigin(selectedLabel).value === "string" && getLabelOrigin(selectedLabel).value !== "Sin vínculo"
-                          ? getLabelOrigin(selectedLabel).value.slice(0, 8).toUpperCase()
-                          : getLabelOrigin(selectedLabel).value}
-                      </strong>
+                      <strong>{getLabelOrigin(selectedLabel).value}</strong>
                     </div>
                     <div className="ti-sales-summary__row">
                       <span>Creada</span>
@@ -306,8 +302,7 @@ export function LabelsWorkbench({
                           </StatusPill>
                         </td>
                         <td>
-                          {origin.title}:{" "}
-                          {origin.value === "Sin vínculo" ? origin.value : origin.value.slice(0, 8).toUpperCase()}
+                          {origin.title}: {origin.value}
                         </td>
                         <td>{formatLocalDateTime(label.createdAt)}</td>
                         <td>{label.lastPrintedAt ? formatLocalDateTime(label.lastPrintedAt) : "Pendiente"}</td>

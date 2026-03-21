@@ -21,6 +21,7 @@ type UseCutsWorkbenchArgs = {
   apiUrl: string;
   authedFetch: (url: string, options?: RequestInit) => Promise<Response>;
   cutFilterStatus: CutJobStatus | "ALL";
+  cutSearch: string;
   scrapPolicy: ScrapPolicy | null;
   softHoldPolicy: SoftHoldPolicy | null;
   activeModal: ActiveModal;
@@ -48,6 +49,7 @@ export function useCutsWorkbench({
   apiUrl,
   authedFetch,
   cutFilterStatus,
+  cutSearch,
   scrapPolicy,
   softHoldPolicy,
   activeModal,
@@ -78,7 +80,8 @@ export function useCutsWorkbench({
     setLoadingMenu(true);
     try {
       const statusQuery = cutFilterStatus === "ALL" ? "" : `&status=${encodeURIComponent(cutFilterStatus)}`;
-      const response = await authedFetch(`${apiUrl}/cut-jobs?branchCode=MAIN${statusQuery}&page=${cutPage}&limit=8`);
+      const searchQuery = cutSearch ? `&search=${encodeURIComponent(cutSearch)}` : "";
+      const response = await authedFetch(`${apiUrl}/cut-jobs?branchCode=MAIN${statusQuery}${searchQuery}&page=${cutPage}&limit=8`);
       if (!response.ok) {
         setCutsStatus(`Error listando cortes: HTTP ${response.status}`);
         return;
@@ -243,10 +246,15 @@ export function useCutsWorkbench({
       if (!response.ok) {
         const err = (await response.json()) as { message?: string };
         setCompatibleScrapsStatus(err.message ?? "Error al asignar retazo.");
-        return;
+        return false;
       }
       setCompatibleScrapsStatus(`Retazo ${scrapId.slice(0, 8)} asignado.`);
       await loadCutJobs();
+      onRefreshScraps();
+      return true;
+    } catch {
+      setCompatibleScrapsStatus("No fue posible asignar el retazo en este momento.");
+      return false;
     } finally {
       setLoadingActionId(null);
     }

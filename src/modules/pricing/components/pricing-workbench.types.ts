@@ -15,6 +15,17 @@ export type QuoteScrapOpportunityRow = {
   recoveredValue: number;
 };
 
+export type QuoteScrapOpportunityMatchRow = Omit<QuoteScrapOpportunityRow, "salesValue" | "recoveredValue">;
+
+export type QuoteScrapOpportunityPreview = {
+  items: QuoteScrapOpportunityMatchRow[];
+  summary: {
+    assignedPieces: number;
+    totalPieces: number;
+    linesWithOpportunity: number;
+  };
+};
+
 export type AutoScrapAssignmentPreview = {
   saleId: string;
   strategy: string;

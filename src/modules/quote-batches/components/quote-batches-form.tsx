@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../shared/ui/primitives/button";
 import { Input } from "../../../shared/ui/primitives/input";
-import { Select } from "../../../shared/ui/primitives/select";
 import { Dialog } from "../../../shared/ui/primitives/dialog";
 import { Spinner } from "../../../shared/ui/primitives/spinner";
 import { DataTable } from "../../../shared/ui/primitives/data-table";
@@ -38,7 +37,7 @@ type BatchLine = {
 
 type QuoteBatch = {
   id: string;
-  status: "DRAFT" | "FINALIZED" | "EXPIRED";
+  status: "DRAFT" | "FINALIZED" | "EXPIRED" | "CANCELED";
   priceListName: string;
   customerId: string | null;
   customerName: string | null;
@@ -81,6 +80,7 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
   const [detailBatch, setDetailBatch] = useState<QuoteBatch | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  const [loadingActionId, setLoadingActionId] = useState<string | null>(null);
 
   const api = useMemo(() => createApiClient(apiUrl, accessToken), [apiUrl, accessToken]);
 
@@ -126,32 +126,39 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
     api.post<{ id?: string }>(`/quotes/batch/${id}/duplicate`, {})
   );
 
-  const finalizeMutation = useMutationAction(async (id: string) =>
-    api.post(`/quotes/batch/${id}/finalize`, {})
+  const cancelMutation = useMutationAction(async (id: string) =>
+    api.post(`/quotes/batch/${id}/cancel`, {})
   );
 
   async function handleDuplicate(id: string) {
+    setLoadingActionId(`dup-${id}`);
     try {
       const data = await duplicateMutation.run(id);
       setStatus(`Cotización duplicada: ${data.id?.slice(0, 8) ?? "?"}`);
       await refetchBatches();
     } catch {
       setStatus("Error al duplicar");
+    } finally {
+      setLoadingActionId(null);
     }
   }
 
-  async function handleFinalize(id: string) {
-    if (!confirm("¿Finalizar esta cotización? No podrá editarse.")) return;
+  async function handleCancel(id: string) {
+    if (!confirm("¿Anular esta cotización? No podrá editarse ni convertirse en venta.")) return;
+    setLoadingActionId(`fin-${id}`);
     try {
-      await finalizeMutation.run(id);
-      setStatus("Cotización finalizada.");
+      await cancelMutation.run(id);
+      setStatus("Cotización anulada.");
       await refetchBatches();
     } catch {
-      setStatus("Error al finalizar");
+      setStatus("Error al anular");
+    } finally {
+      setLoadingActionId(null);
     }
   }
 
   async function handleCreateDraft(batch: QuoteBatch) {
+    setLoadingActionId(`sale-${batch.id}`);
     try {
       const data = await api.post<{ quoteCode?: string; message?: string }>(
         "/sales/from-quote",
@@ -177,10 +184,12 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
       if (batch.status === "DRAFT") {
         void api.post(`/quotes/batch/${batch.id}/finalize`, {});
       }
-      setStatus(`Draft creado: ${data.quoteCode ?? "?"}`);
+      setStatus(`Venta creada: ${data.quoteCode ?? "?"}`);
       onNavigate("sales");
     } catch {
-      setStatus("Error al crear draft");
+      setStatus("Error al crear venta");
+    } finally {
+      setLoadingActionId(null);
     }
   }
 
@@ -195,7 +204,8 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
     const map: Record<string, string> = {
       DRAFT: "Borrador",
       FINALIZED: "Finalizada",
-      EXPIRED: "Expirada"
+      EXPIRED: "Expirada",
+      CANCELED: "Anulada"
     };
     return map[s] ?? s;
   };
@@ -206,69 +216,6 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
         className="ti-workbench--quote-batches"
         aside={
           <>
-            <WorkbenchSection title="Filtros">
-              <div style={{ display: "grid", gap: "0.9rem" }}>
-                <label className="field">
-                  <span>Estado</span>
-                  <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-                    <option value="">Todos los estados</option>
-                    <option value="DRAFT">Borrador</option>
-                    <option value="FINALIZED">Finalizada</option>
-                    <option value="EXPIRED">Expirada</option>
-                  </Select>
-                </label>
-                <label className="field">
-                  <span>Cliente</span>
-                  <Input
-                    placeholder="Nombre del cliente"
-                    value={filterCustomer}
-                    onChange={(e) => setFilterCustomer(e.target.value)}
-                  />
-                </label>
-                <label className="field">
-                  <span>Referencia</span>
-                  <Input
-                    placeholder="Obra o referencia"
-                    value={filterReference}
-                    onChange={(e) => setFilterReference(e.target.value)}
-                  />
-                </label>
-                <label className="field">
-                  <span>Desde</span>
-                  <Input
-                    type="date"
-                    value={filterFrom}
-                    onChange={(e) => setFilterFrom(e.target.value)}
-                  />
-                </label>
-                <label className="field">
-                  <span>Hasta</span>
-                  <Input
-                    type="date"
-                    value={filterTo}
-                    onChange={(e) => setFilterTo(e.target.value)}
-                  />
-                </label>
-                <div className="ti-section__actions" style={{ display: "flex", gap: "0.5rem" }}>
-                  <Button variant="secondary" onClick={() => void refetchBatches()} disabled={loading}>
-                    {loading ? <Spinner size="sm" /> : "Buscar"}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      setFilterStatus("");
-                      setFilterCustomer("");
-                      setFilterReference("");
-                      setFilterFrom("");
-                      setFilterTo("");
-                    }}
-                  >
-                    Limpiar
-                  </Button>
-                </div>
-              </div>
-            </WorkbenchSection>
-
             <WorkbenchSection title="Cotización seleccionada">
               {selectedBatch ? (
                 <div style={{ display: "grid", gap: "1rem" }}>
@@ -279,7 +226,7 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
                     </div>
                     <div className="ti-sales-summary__row">
                       <span>Estado</span>
-                      <StatusPill tone={selectedBatch.status === "FINALIZED" ? "success" : selectedBatch.status === "EXPIRED" ? "neutral" : "draft"}>
+                      <StatusPill tone={selectedBatch.status === "FINALIZED" ? "success" : selectedBatch.status === "EXPIRED" || selectedBatch.status === "CANCELED" ? "neutral" : "draft"}>
                         {statusBadge(selectedBatch.status)}
                       </StatusPill>
                     </div>
@@ -326,17 +273,19 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
                     <Button variant="secondary" onClick={() => openDetail(selectedBatch)}>
                       Ver detalle
                     </Button>
-                    <Button variant="secondary" onClick={() => void handleDuplicate(selectedBatch.id)}>
-                      Duplicar
-                    </Button>
                     {selectedBatch.status === "DRAFT" ? (
-                      <Button variant="secondary" onClick={() => void handleFinalize(selectedBatch.id)}>
-                        Finalizar
-                      </Button>
+                      <>
+                        <Button variant="secondary" onClick={() => void handleDuplicate(selectedBatch.id)} disabled={loadingActionId === `dup-${selectedBatch.id}`}>
+                          {loadingActionId === `dup-${selectedBatch.id}` ? <><Spinner size="sm" /> Duplicando...</> : "Duplicar"}
+                        </Button>
+                        <Button variant="secondary" onClick={() => void handleCancel(selectedBatch.id)} disabled={loadingActionId === `fin-${selectedBatch.id}`}>
+                          {loadingActionId === `fin-${selectedBatch.id}` ? <><Spinner size="sm" /> Anulando...</> : "Anular"}
+                        </Button>
+                        <Button variant="primary" onClick={() => void handleCreateDraft(selectedBatch)} disabled={loadingActionId === `sale-${selectedBatch.id}`}>
+                          {loadingActionId === `sale-${selectedBatch.id}` ? <><Spinner size="sm" /> Creando venta...</> : "Crear venta"}
+                        </Button>
+                      </>
                     ) : null}
-                    <Button variant="primary" onClick={() => void handleCreateDraft(selectedBatch)}>
-                      Crear venta draft
-                    </Button>
                   </div>
                 </div>
               ) : (
@@ -352,25 +301,60 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
         <WorkbenchSection
           title={`Historial de cotizaciones (${totalBatches})`}
           className="ti-quote-batches-list-section"
-          actions={(
-            <>
-              <Button variant={filterStatus === "" ? "primary" : "secondary"} onClick={() => setFilterStatus("")}>
-                Todas
-              </Button>
-              <Button variant={filterStatus === "DRAFT" ? "primary" : "secondary"} onClick={() => setFilterStatus("DRAFT")}>
-                Borrador
-              </Button>
-              <Button variant={filterStatus === "FINALIZED" ? "primary" : "secondary"} onClick={() => setFilterStatus("FINALIZED")}>
-                Finalizada
-              </Button>
-              <Button variant={filterStatus === "EXPIRED" ? "primary" : "secondary"} onClick={() => setFilterStatus("EXPIRED")}>
-                Expirada
-              </Button>
-            </>
-          )}
+          actions={null}
         >
           {status ? <p className="status-note" style={{ margin: "0 0 0.75rem" }}>{status}</p> : null}
           {queryError ? <p className="status-note" style={{ color: "var(--danger)", margin: "0 0 0.75rem" }}>{queryError}</p> : null}
+
+          <div className="ti-qb-toolbar" style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center", marginBottom: "0.75rem" }}>
+            <div style={{ display: "flex", gap: "0.25rem" }}>
+              <Button variant={filterStatus === "" ? "primary" : "secondary"} onClick={() => setFilterStatus("")}>Todas</Button>
+              <Button variant={filterStatus === "DRAFT" ? "primary" : "secondary"} onClick={() => setFilterStatus("DRAFT")}>Borrador</Button>
+              <Button variant={filterStatus === "CANCELED" ? "primary" : "secondary"} onClick={() => setFilterStatus("CANCELED")}>Anulada</Button>
+              <Button variant={filterStatus === "EXPIRED" ? "primary" : "secondary"} onClick={() => setFilterStatus("EXPIRED")}>Expirada</Button>
+            </div>
+            <Input
+              placeholder="Cliente"
+              value={filterCustomer}
+              onChange={(e) => setFilterCustomer(e.target.value)}
+              style={{ maxWidth: "10rem" }}
+            />
+            <Input
+              placeholder="Referencia"
+              value={filterReference}
+              onChange={(e) => setFilterReference(e.target.value)}
+              style={{ maxWidth: "10rem" }}
+            />
+            <Input
+              type="date"
+              value={filterFrom}
+              onChange={(e) => setFilterFrom(e.target.value)}
+              title="Desde"
+              style={{ maxWidth: "9rem" }}
+            />
+            <Input
+              type="date"
+              value={filterTo}
+              onChange={(e) => setFilterTo(e.target.value)}
+              title="Hasta"
+              style={{ maxWidth: "9rem" }}
+            />
+            <Button variant="secondary" onClick={() => void refetchBatches()} disabled={loading}>
+              {loading ? <Spinner size="sm" /> : "Buscar"}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setFilterStatus("");
+                setFilterCustomer("");
+                setFilterReference("");
+                setFilterFrom("");
+                setFilterTo("");
+              }}
+            >
+              Limpiar
+            </Button>
+          </div>
 
           <div className="ti-quote-batches-list-region">
             {batches.length === 0 && !loading ? (
@@ -402,53 +386,85 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
                       <td>{batch.lines.length}</td>
                       <td>${Math.round(batch.totalAmount).toLocaleString()}</td>
                       <td>
-                        <StatusPill tone={batch.status === "FINALIZED" ? "success" : batch.status === "EXPIRED" ? "neutral" : "draft"}>
+                        <StatusPill tone={batch.status === "FINALIZED" ? "success" : batch.status === "EXPIRED" || batch.status === "CANCELED" ? "neutral" : "draft"}>
                           {statusBadge(batch.status)}
                         </StatusPill>
                       </td>
                       <td>
                         <div className="actions-cell">
                           {batch.status === "DRAFT" && onEditBatch ? (
-                            <Button
-                              variant="primary"
+                            <button
+                              type="button"
+                              className="t-btn t-btn-secondary ti-icon-button"
+                              title="Editar"
+                              aria-label="Editar"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 onEditBatch(batch.id);
                               }}
                             >
-                              Editar
-                            </Button>
+                              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M11.5 2.5a2 2 0 0 1 2.83 2.83L5.75 13.9 2 15l1.1-3.75Z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </button>
                           ) : null}
-                          <Button
-                            variant="secondary"
+                          <button
+                            type="button"
+                            className="t-btn t-btn-secondary ti-icon-button"
+                            title="Ver"
+                            aria-label="Ver"
                             onClick={(event) => {
                               event.stopPropagation();
                               setSelectedBatchId(batch.id);
                               openDetail(batch);
                             }}
                           >
-                            Ver
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setSelectedBatchId(batch.id);
-                              void handleDuplicate(batch.id);
-                            }}
-                          >
-                            Duplicar
-                          </Button>
-                          <Button
-                            variant="primary"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setSelectedBatchId(batch.id);
-                              void handleCreateDraft(batch);
-                            }}
-                          >
-                            Crear draft
-                          </Button>
+                            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M1.5 8s2.5-5 6.5-5 6.5 5 6.5 5-2.5 5-6.5 5S1.5 8 1.5 8Z" fill="none" stroke="currentColor" strokeWidth="1.4"/><circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" strokeWidth="1.4"/></svg>
+                          </button>
+                          {batch.status === "DRAFT" ? (
+                            <>
+                              <button
+                                type="button"
+                                className="t-btn t-btn-secondary ti-icon-button"
+                                title="Duplicar"
+                                aria-label="Duplicar"
+                                disabled={loadingActionId === `dup-${batch.id}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setSelectedBatchId(batch.id);
+                                  void handleDuplicate(batch.id);
+                                }}
+                              >
+                                {loadingActionId === `dup-${batch.id}` ? <Spinner size="sm" /> : <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="5.5" y="5.5" width="8" height="8" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.4"/><path d="M3 10.5c-.7 0-1.2-.5-1.2-1.2v-6c0-.7.5-1.2 1.2-1.2h6c.7 0 1.2.5 1.2 1.2" fill="none" stroke="currentColor" strokeWidth="1.4"/></svg>}
+                              </button>
+                              <button
+                                type="button"
+                                className="t-btn t-btn-secondary ti-icon-button"
+                                title="Anular"
+                                aria-label="Anular"
+                                disabled={loadingActionId === `fin-${batch.id}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setSelectedBatchId(batch.id);
+                                  void handleCancel(batch.id);
+                                }}
+                              >
+                                {loadingActionId === `fin-${batch.id}` ? <Spinner size="sm" /> : <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><line x1="3" y1="3" x2="13" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><line x1="13" y1="3" x2="3" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>}
+                              </button>
+                              <button
+                                type="button"
+                                className="t-btn t-btn-primary ti-icon-button ti-icon-button--accent"
+                                title="Crear venta"
+                                aria-label="Crear venta"
+                                disabled={loadingActionId === `sale-${batch.id}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setSelectedBatchId(batch.id);
+                                  void handleCreateDraft(batch);
+                                }}
+                              >
+                                {loadingActionId === `sale-${batch.id}` ? <Spinner size="sm" /> : <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3.5 8h9M8 3.5v9" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>}
+                              </button>
+                            </>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -461,7 +477,7 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
       </WorkbenchLayout>
 
       <ActionFooter
-        left={<span className="ti-sales-footer-note">Historial persistido para duplicar, finalizar o convertir cotizaciones en venta draft.</span>}
+        left={<span className="ti-sales-footer-note">Historial persistido para duplicar, anular o convertir cotizaciones en venta.</span>}
         summary={(
           <div className="ti-pricing-footer-summary">
             <span className="ti-pricing-footer-summary__meta">Página {page} de {pageCount}</span>
@@ -471,11 +487,11 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
         )}
         actions={(
           <>
-            <Button variant="secondary" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page === 1}>
-              Anterior
+            <Button variant="secondary" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page === 1 || loading}>
+              {loading ? <Spinner size="sm" /> : "Anterior"}
             </Button>
-            <Button variant="secondary" onClick={() => setPage((value) => Math.min(pageCount, value + 1))} disabled={page >= pageCount}>
-              Siguiente
+            <Button variant="secondary" onClick={() => setPage((value) => Math.min(pageCount, value + 1))} disabled={page >= pageCount || loading}>
+              {loading ? <Spinner size="sm" /> : "Siguiente"}
             </Button>
           </>
         )}
@@ -538,14 +554,16 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
               ) : null}
             </div>
 
-            <ModalActions style={{ marginTop: "1rem", justifyContent: "flex-start" }}>
-              <Button variant="primary" onClick={() => { setDetailOpen(false); void handleCreateDraft(detailBatch); }}>
-                Crear Venta Draft
-              </Button>
-              <Button variant="secondary" onClick={() => { setDetailOpen(false); void handleDuplicate(detailBatch.id); }}>
-                Duplicar
-              </Button>
-            </ModalActions>
+            {detailBatch.status === "DRAFT" ? (
+              <ModalActions style={{ marginTop: "1rem", justifyContent: "flex-start" }}>
+                <Button variant="primary" disabled={loadingActionId === `sale-${detailBatch.id}`} onClick={() => { setDetailOpen(false); void handleCreateDraft(detailBatch); }}>
+                  {loadingActionId === `sale-${detailBatch.id}` ? <><Spinner size="sm" /> Creando venta...</> : "Crear Venta"}
+                </Button>
+                <Button variant="secondary" disabled={loadingActionId === `dup-${detailBatch.id}`} onClick={() => { setDetailOpen(false); void handleDuplicate(detailBatch.id); }}>
+                  {loadingActionId === `dup-${detailBatch.id}` ? <><Spinner size="sm" /> Duplicando...</> : "Duplicar"}
+                </Button>
+              </ModalActions>
+            ) : null}
           </>
         ) : null}
       </Dialog>

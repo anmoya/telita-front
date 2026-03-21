@@ -39,9 +39,11 @@ export function useScrapsWorkbench({
 }: UseScrapsWorkbenchArgs) {
   const [selectedScrapIds, setSelectedScrapIds] = useState<string[]>([]);
   const [scrapFilterStatus, setScrapFilterStatus] = useState<ScrapFilterStatus>("ALL");
+  const [scrapSearchQuery, setScrapSearchQuery] = useState("");
   const [scrapPage, setScrapPage] = useState(1);
   const [scrapPageCount, setScrapPageCount] = useState(1);
   const [totalScraps, setTotalScraps] = useState(0);
+  const [labelPreviewHtml, setLabelPreviewHtml] = useState<string | null>(null);
 
   async function authedFetch(url: string, options: RequestInit = {}) {
     const headers = new Headers(options.headers ?? {});
@@ -61,19 +63,14 @@ export function useScrapsWorkbench({
     return response.text();
   }
 
-  async function openAuthedHtmlDocument(url: string) {
+  async function showLabelPreview(url: string) {
     const html = await fetchAuthedText(url);
-    const win = window.open("", "_blank", "noreferrer");
-    if (!win) return;
-    win.document.open();
-    win.document.write(html);
-    win.document.close();
+    setLabelPreviewHtml(html);
   }
 
-  async function openBatchPdf(labelIds: string[]) {
+  async function showBatchPreview(labelIds: string[]) {
     if (labelIds.length === 0) return;
-    const url = `${apiUrl}/labels/batch-pdf?labelIds=${labelIds.join(",")}`;
-    await openAuthedHtmlDocument(url);
+    await showLabelPreview(`${apiUrl}/labels/batch-pdf?labelIds=${labelIds.join(",")}`);
   }
 
   async function registerBatchPrint(labelIds: string[]) {
@@ -88,7 +85,8 @@ export function useScrapsWorkbench({
     setLoadingMenu(true);
     try {
       const statusQuery = scrapFilterStatus === "ALL" ? "" : `&status=${encodeURIComponent(scrapFilterStatus)}`;
-      const response = await authedFetch(`${apiUrl}/scraps?branchCode=MAIN${statusQuery}&page=${scrapPage}&limit=8`);
+      const searchQuery = scrapSearchQuery.trim() ? `&quoteCode=${encodeURIComponent(scrapSearchQuery.trim())}` : "";
+      const response = await authedFetch(`${apiUrl}/scraps?branchCode=MAIN${statusQuery}${searchQuery}&page=${scrapPage}&limit=8`);
       const payload = (await response.json()) as {
         data: ScrapRow[];
         total: number;
@@ -119,7 +117,9 @@ export function useScrapsWorkbench({
       setScrapStatus(body.message ?? `Error HTTP ${response.status}`);
       return;
     }
-    setScrapStatus(`Etiqueta de retazo creada: ${body.labelId ?? "error"}`);
+    const labelId = body.labelId as string;
+    setScrapStatus(`Etiqueta de retazo creada: ${labelId}`);
+    await showLabelPreview(`${apiUrl}/labels/${labelId}/pdf`);
   }
 
   async function handlePrintScrapLabels() {
@@ -136,7 +136,7 @@ export function useScrapsWorkbench({
       if (!response.ok) return;
       const data = (await response.json()) as { labels: Array<{ labelId: string }> };
       const labelIds = data.labels.map((label) => label.labelId);
-      await openBatchPdf(labelIds);
+      await showBatchPreview(labelIds);
       await registerBatchPrint(labelIds);
       setSelectedScrapIds([]);
       setScrapStatus(`${labelIds.length} etiqueta(s) enviadas a imprimir.`);
@@ -176,16 +176,18 @@ export function useScrapsWorkbench({
 
   useEffect(() => {
     if (activeMenu === "scraps") void handleListScraps();
-  }, [activeMenu, scrapFilterStatus, scrapPage]);
+  }, [activeMenu, scrapFilterStatus, scrapSearchQuery, scrapPage]);
 
   useEffect(() => {
     setScrapPage(1);
-  }, [scrapFilterStatus]);
+  }, [scrapFilterStatus, scrapSearchQuery]);
 
   return {
     selectedScrapIds,
     setSelectedScrapIds,
     scrapFilterStatus,
+    scrapSearchQuery,
+    setScrapSearchQuery,
     scrapPage,
     scrapPageCount,
     totalScraps,
@@ -196,6 +198,8 @@ export function useScrapsWorkbench({
     handleCreateScrapLabel,
     handlePrintScrapLabels,
     toggleScrapSelection,
-    handleModalAssignLocation
+    handleModalAssignLocation,
+    labelPreviewHtml,
+    closeLabelPreview: () => setLabelPreviewHtml(null)
   };
 }

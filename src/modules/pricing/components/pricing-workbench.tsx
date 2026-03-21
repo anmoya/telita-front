@@ -1,6 +1,8 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { Button } from "../../../shared/ui/primitives/button";
+import { Dialog } from "../../../shared/ui/primitives/dialog";
 import { Input } from "../../../shared/ui/primitives/input";
 import { Select } from "../../../shared/ui/primitives/select";
 import { Spinner } from "../../../shared/ui/primitives/spinner";
@@ -10,7 +12,7 @@ import { StatusPill } from "../../../shared/ui/patterns/status-pill";
 import { TotalsSummary } from "../../../shared/ui/patterns/totals-summary";
 import { WorkbenchLayout } from "../../../shared/ui/patterns/workbench-layout";
 import { WorkbenchSection } from "../../../shared/ui/patterns/workbench-section";
-import { QuoteScrapOpportunityPanel } from "./quote-scrap-opportunity-panel";
+import { QuoteScrapOpportunityDialog } from "./quote-scrap-opportunity-dialog";
 import type { QuoteScrapOpportunityRow } from "./pricing-workbench.types";
 import type { CustomerOption, PreviewResult, QuoteItem, QuoteItemCategory } from "./pricing-workbench.shared-types";
 
@@ -44,8 +46,7 @@ type SkuOption = {
 type PricingWorkbenchProps = {
   quoteItems: QuoteItem[];
   activeQuoteItemId: string | null;
-  activeQuoteItemSkuCode: string | null;
-  activeQuoteItemOpportunityCount: number;
+  quoteOpportunityEligibleCount: number;
   quoteItemMatches: QuoteScrapOpportunityRow[];
   quoteItemMatchesStatus: string;
   quoteOpportunitySummary: {
@@ -54,10 +55,13 @@ type PricingWorkbenchProps = {
     recoveredValue: number;
     orderCoveragePct: number;
   };
+  quoteOpportunityOpen: boolean;
   loadingActionId: string | null;
   quoteHasCalcErrors: boolean;
   quoteSubtotal: number;
-  operatorMargin: number;
+  commercialAdjustmentPct: number;
+  commercialAdjustmentAmount: number;
+  installationAmount: number;
   quoteTax: number;
   quoteTotal: number;
   quoteAmountPaid: number;
@@ -81,19 +85,24 @@ type PricingWorkbenchProps = {
   loadingBatch: boolean;
   loadingPreview: boolean;
   loadingCreateDraft: boolean;
+  loadingSave: boolean;
+  quoteDirty: boolean;
   quoteReady: boolean;
   status: string;
-  onRefreshQuoteScrapOpportunities: () => void;
+  statusTone: "success" | "danger" | null;
+  onOpenQuoteOpportunity: () => void;
+  onCloseQuoteOpportunity: () => void;
   onApplyQuoteCustomerSelection: (selectedId: string) => void;
   onQuoteCustomerReferenceChange: (value: string) => void;
   onQuoteCustomerNameChange: (value: string) => void;
   onSelectedPriceListNameChange: (value: string) => void;
-  onOperatorMarginChange: (value: number) => void;
+  onCommercialAdjustmentPctChange: (value: number) => void;
+  onInstallationAmountChange: (value: number) => void;
   onQuoteManualDiscountPctChange: (value: string) => void;
   onQuoteManualDiscountReasonChange: (value: string) => void;
   onAddQuoteItem: () => void;
   onCalculateAll: () => void;
-  onFetchQuoteItemMatches: (itemId: string) => void;
+  onSelectQuoteItem: (itemId: string) => void;
   onMoveItemUp: (itemId: string) => void;
   onMoveItemDown: (itemId: string) => void;
   onUpdateQuoteItem: (itemId: string, patch: Partial<QuoteItem>) => void;
@@ -105,20 +114,23 @@ type PricingWorkbenchProps = {
   onSaveToHistory: () => void;
   onPreviewCustomer: () => void;
   onCreateDraftFromQuote: () => void;
+  onShowBreakdown: () => void;
 };
 
 export function PricingWorkbench({
   quoteItems,
   activeQuoteItemId,
-  activeQuoteItemSkuCode,
-  activeQuoteItemOpportunityCount,
+  quoteOpportunityEligibleCount,
   quoteItemMatches,
   quoteItemMatchesStatus,
   quoteOpportunitySummary,
+  quoteOpportunityOpen,
   loadingActionId,
   quoteHasCalcErrors,
   quoteSubtotal,
-  operatorMargin,
+  commercialAdjustmentPct,
+  commercialAdjustmentAmount,
+  installationAmount,
   quoteTax,
   quoteTotal,
   quoteAmountPaid,
@@ -142,19 +154,24 @@ export function PricingWorkbench({
   loadingBatch,
   loadingPreview,
   loadingCreateDraft,
+  loadingSave,
+  quoteDirty,
   quoteReady,
   status,
-  onRefreshQuoteScrapOpportunities,
+  statusTone,
+  onOpenQuoteOpportunity,
+  onCloseQuoteOpportunity,
   onApplyQuoteCustomerSelection,
   onQuoteCustomerReferenceChange,
   onQuoteCustomerNameChange,
   onSelectedPriceListNameChange,
-  onOperatorMarginChange,
+  onCommercialAdjustmentPctChange,
+  onInstallationAmountChange,
   onQuoteManualDiscountPctChange,
   onQuoteManualDiscountReasonChange,
   onAddQuoteItem,
   onCalculateAll,
-  onFetchQuoteItemMatches,
+  onSelectQuoteItem,
   onMoveItemUp,
   onMoveItemDown,
   onUpdateQuoteItem,
@@ -165,135 +182,163 @@ export function PricingWorkbench({
   onResetQuoteWorkbench,
   onSaveToHistory,
   onPreviewCustomer,
-  onCreateDraftFromQuote
+  onCreateDraftFromQuote,
+  onShowBreakdown
 }: PricingWorkbenchProps) {
+  const [customerContextOpen, setCustomerContextOpen] = useState(false);
+  const selectedCustomer = useMemo(
+    () => customers.find((customer) => customer.id === quoteCustomerId) ?? null,
+    [customers, quoteCustomerId]
+  );
+  const showPricingBanner = Boolean(status || quoteBatchId || quoteDirty || selectedPriceListName || quoteItems.length);
+
   return (
-    <article className="flow-card ti-pricing-shell" id="section-pricing">
-      <WorkbenchLayout
+    <>
+      <article className="flow-card ti-pricing-shell" id="section-pricing">
+        {showPricingBanner ? (
+          <section className="ti-pricing-banner">
+            <div className="ti-pricing-banner__status">
+              <StatusPill tone={pricingDocumentTone}>{pricingDocumentStatus}</StatusPill>
+              {quoteBatchId ? <StatusPill tone="warning">Editando borrador</StatusPill> : null}
+              {quoteDirty ? <StatusPill tone="danger">Cambios sin guardar</StatusPill> : null}
+              {status ? <StatusPill tone={statusTone ?? "neutral"}>{status}</StatusPill> : null}
+            </div>
+            <div className="ti-pricing-banner__meta">
+              <span>{selectedPriceListName || "Sin lista de precios"}</span>
+              <span>{quoteItems.length} línea(s)</span>
+              {quoteCustomerName ? <span>Cliente visible: {quoteCustomerName}</span> : null}
+            </div>
+          </section>
+        ) : null}
+
+        <WorkbenchLayout
         className="ti-workbench--pricing"
         aside={
           <>
-            <QuoteScrapOpportunityPanel
-              quoteItemsCount={quoteItems.length}
-              activeQuoteItemSkuCode={activeQuoteItemSkuCode}
-              activeQuoteItemOpportunityCount={activeQuoteItemOpportunityCount}
-              quoteItemMatches={quoteItemMatches}
-              quoteItemMatchesStatus={quoteItemMatchesStatus}
-              quoteOpportunitySummary={quoteOpportunitySummary}
-              loading={Boolean(loadingActionId?.startsWith("quote-match-"))}
-              onRefresh={onRefreshQuoteScrapOpportunities}
-            />
-
-            <WorkbenchSection title="Totales">
-              {quoteHasCalcErrors ? (
-                <p className="status-note" style={{ margin: 0, color: "var(--danger)" }}>
-                  Total bloqueado: corrige los items con error antes de cerrar la cotizacion.
+            <WorkbenchSection title="Retazos útiles" className="ti-pricing-opportunity-launcher">
+              <div className="ti-pricing-opportunity-launcher__body">
+                <p className="ti-field-note" style={{ margin: 0 }}>
+                  Consulta el potencial comercial de los retazos disponibles para esta cotización.
                 </p>
-              ) : (
-                <>
-                  {(() => {
-                    const discPct = customerDiscountInfo.pct;
-                    const discountAmount = discPct > 0 ? Math.round(quoteSubtotal * discPct / 100) : 0;
-                    const subtotalAfterDiscount = quoteSubtotal - discountAmount;
-                    const taxAfterDiscount = Math.round(subtotalAfterDiscount * 0.19);
-                    const totalAfterDiscount = Math.round(subtotalAfterDiscount + taxAfterDiscount);
-                    const showDiscount = discPct > 0;
-
-                    const rows = [
-                      { label: "Subtotal", value: `$${Math.round(quoteSubtotal).toLocaleString()}` },
-                      { label: "Ajuste operador", value: operatorMargin > 0 ? `${operatorMargin}%` : "—", tone: "muted" as const },
-                      ...(showDiscount ? [{ label: `Descuento cliente (${discPct}%)`, value: `-$${discountAmount.toLocaleString()}`, tone: "success" as const }] : []),
-                      { label: "Impuesto (19%)", value: `$${(showDiscount ? taxAfterDiscount : quoteTax).toLocaleString()}` }
-                    ];
-
-                    return (
-                      <TotalsSummary
-                        rows={rows}
-                        totalLabel="Total"
-                        totalValue={`$${(showDiscount ? totalAfterDiscount : quoteTotal).toLocaleString()}`}
-                        note={
-                          showDiscount
-                            ? "Total estimado con descuento del cliente. El descuento definitivo se aplica al crear la venta."
-                            : operatorMargin > 0 ? "Total ajustado con margen operador. No se persiste en BD." : undefined
-                        }
-                      />
-                    );
-                  })()}
-                  <div style={{ marginTop: "0.75rem", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
-                    <label className="ti-field-label" style={{ display: "block", marginBottom: "0.25rem" }}>Abono del cliente</label>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={quoteTotal}
-                        value={quoteAmountPaid || ""}
-                        placeholder="0"
-                        onChange={(e) => {
-                          const v = Number(e.target.value);
-                          if (!isNaN(v) && v >= 0 && v <= quoteTotal) onQuoteAmountPaidChange(v);
-                          else if (e.target.value === "") onQuoteAmountPaidChange(0);
-                        }}
-                        style={{ maxWidth: "10rem" }}
-                      />
-                      {quoteAmountPaid > 0 && quoteTotal > 0 ? (
-                        <span style={{ fontSize: "0.85em", color: "var(--muted)" }}>
-                          ({((quoteAmountPaid / quoteTotal) * 100).toFixed(1)}%)
-                        </span>
-                      ) : null}
-                    </div>
-                    <div style={{ marginTop: "0.5rem", fontSize: "0.9em" }}>
-                      <strong>Saldo por pagar: </strong>
-                      {quoteAmountPaid > 0
-                        ? <span style={{ color: "var(--warning)" }}>${Math.round(Math.max(quoteTotal - quoteAmountPaid, 0)).toLocaleString()}</span>
-                        : <span style={{ color: "var(--muted)" }}>Sin abono</span>
-                      }
-                    </div>
-                  </div>
-                </>
-              )}
+                <div className="ti-pricing-opportunity-launcher__meta">
+                  {quoteOpportunityEligibleCount > 0 ? (
+                    <StatusPill tone={quoteItemMatches.length > 0 ? "success" : "neutral"}>
+                      {quoteItemMatches.length > 0
+                        ? `Potencial $${Math.round(quoteOpportunitySummary.recoveredValue).toLocaleString()}`
+                        : `${quoteOpportunityEligibleCount} línea(s) listas`}
+                    </StatusPill>
+                  ) : (
+                    <StatusPill tone="neutral">Sin líneas elegibles</StatusPill>
+                  )}
+                  <Button
+                    variant="primary"
+                    onClick={onOpenQuoteOpportunity}
+                    disabled={quoteOpportunityEligibleCount === 0 || loadingActionId === "quote-opportunity"}
+                  >
+                    {loadingActionId === "quote-opportunity" ? <Spinner size="sm" /> : "Ver retazos útiles"}
+                  </Button>
+                </div>
+              </div>
             </WorkbenchSection>
-          </>
-        }
-      >
-        <WorkbenchSection title="Cliente y contexto">
-          <div className="ti-meta-form-grid">
-            <label className="ti-form-span-2">
-              <span className="ti-field-label">Cliente / Empresa</span>
-              <Select value={quoteCustomerId} onChange={(e) => onApplyQuoteCustomerSelection(e.target.value)}>
-                <option value="">Seleccionar cliente</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.code} - {customer.fullName}{customer.rut ? ` (${customer.rut})` : ""}
-                  </option>
-                ))}
-              </Select>
-              {quoteCustomerId && (() => {
-                const sel = customers.find((c) => c.id === quoteCustomerId);
-                return sel?.rut ? <span className="ti-field-note">RUT: {sel.rut}</span> : null;
-              })()}
+
+            <WorkbenchSection title="Totales" className="ti-pricing-totals-section">
+                {quoteHasCalcErrors ? (
+                  <p className="status-note" style={{ margin: 0, color: "var(--danger)" }}>
+                    Total bloqueado: corrige los items con error antes de cerrar la cotizacion.
+                  </p>
+                ) : (
+                  <>
+                    {(() => {
+                      const discPct = customerDiscountInfo.pct;
+                      const baseSubtotal = quoteSubtotal - commercialAdjustmentAmount - installationAmount;
+                      const discountAmount = discPct > 0 ? Math.round(baseSubtotal * discPct / 100) : 0;
+                      const subtotalAfterDiscount = baseSubtotal - discountAmount + commercialAdjustmentAmount + installationAmount;
+                      const taxAfterDiscount = Math.round(subtotalAfterDiscount * 0.19);
+                      const totalAfterDiscount = Math.round(subtotalAfterDiscount + taxAfterDiscount);
+                      const showDiscount = discPct > 0;
+
+                      const rows = [
+                        { label: "Subtotal base", value: `$${Math.round(baseSubtotal).toLocaleString()}` },
+                        ...(showDiscount ? [{ label: `Descuento cliente (${discPct}%)`, value: `-$${discountAmount.toLocaleString()}`, tone: "success" as const }] : []),
+                        ...(commercialAdjustmentAmount > 0 ? [{ label: `Recargo comercial (${commercialAdjustmentPct}%)`, value: `$${Math.round(commercialAdjustmentAmount).toLocaleString()}` }] : []),
+                        ...(installationAmount > 0 ? [{ label: "Instalación", value: `$${Math.round(installationAmount).toLocaleString()}` }] : []),
+                        { label: "Impuesto (19%)", value: `$${(showDiscount ? taxAfterDiscount : quoteTax).toLocaleString()}` }
+                      ];
+
+                      return (
+                        <TotalsSummary
+                          className="ti-pricing-totals-summary"
+                          rows={rows}
+                          totalLabel="Total"
+                          totalValue={`$${(showDiscount ? totalAfterDiscount : quoteTotal).toLocaleString()}`}
+                          note={
+                            showDiscount
+                              ? "Total estimado con descuento del cliente. El descuento definitivo se aplica al crear la venta."
+                              : undefined
+                          }
+                        />
+                      );
+                    })()}
+                    <div style={{ marginTop: "0.75rem", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
+                      <label className="ti-field-label" style={{ display: "block", marginBottom: "0.25rem" }}>Abono del cliente</label>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={quoteTotal}
+                          value={quoteAmountPaid || ""}
+                          placeholder="0"
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            if (!isNaN(v) && v >= 0 && v <= quoteTotal) onQuoteAmountPaidChange(v);
+                            else if (e.target.value === "") onQuoteAmountPaidChange(0);
+                          }}
+                          style={{ maxWidth: "10rem" }}
+                        />
+                        {quoteAmountPaid > 0 && quoteTotal > 0 ? (
+                          <span style={{ fontSize: "0.85em", color: "var(--muted)" }}>
+                            ({((quoteAmountPaid / quoteTotal) * 100).toFixed(1)}%)
+                          </span>
+                        ) : null}
+                      </div>
+                      <div style={{ marginTop: "0.5rem", fontSize: "0.9em" }}>
+                        <strong>Saldo por pagar: </strong>
+                        {quoteAmountPaid > 0
+                          ? <span style={{ color: "var(--warning)" }}>${Math.round(Math.max(quoteTotal - quoteAmountPaid, 0)).toLocaleString()}</span>
+                          : <span style={{ color: "var(--muted)" }}>Sin abono</span>
+                        }
+                      </div>
+                    </div>
+                  </>
+                )}
+              </WorkbenchSection>
+            </>
+          }
+        >
+        <WorkbenchSection title="Cliente y contexto" className="ti-pricing-context-section">
+          <div className="ti-pricing-context-summary">
+            <div className="ti-pricing-context-summary__main">
+              <div className="ti-pricing-context-summary__row">
+                <span className="ti-pricing-context-summary__label">Cliente</span>
+                <strong>{selectedCustomer?.fullName ?? "Sin cliente seleccionado"}</strong>
+                {selectedCustomer?.rut ? <span className="ti-pricing-context-summary__meta">RUT {selectedCustomer.rut}</span> : null}
+              </div>
+              <div className="ti-pricing-context-summary__row">
+                <span className="ti-pricing-context-summary__label">Visible</span>
+                <span>{quoteCustomerName || "Sin nombre visible"}</span>
+                <span className="ti-pricing-context-summary__meta">Ref. {quoteCustomerReference || "Sin referencia"}</span>
+              </div>
               {customerDiscountInfo.text ? (
-                <span className="ti-field-note" style={{ color: "var(--color-accent)", fontWeight: 500 }}>
-                  {customerDiscountInfo.text}
-                </span>
+                <div className="ti-pricing-context-summary__discount">{customerDiscountInfo.text}</div>
               ) : null}
-            </label>
-            <label className="ti-form-span-2">
-              <span className="ti-field-label">Referencia del proyecto</span>
-              <Input
-                value={quoteCustomerReference}
-                onChange={(e) => onQuoteCustomerReferenceChange(e.target.value)}
-                placeholder="Obra / referencia"
-              />
-            </label>
-            <label className="ti-form-span-2">
-              <span className="ti-field-label">Cliente visible</span>
-              <Input
-                value={quoteCustomerName}
-                onChange={(e) => onQuoteCustomerNameChange(e.target.value)}
-                placeholder="Nombre del cliente"
-              />
-            </label>
-            <label>
+            </div>
+            <Button variant="secondary" onClick={() => setCustomerContextOpen(true)}>
+              {selectedCustomer ? "Cambiar" : "Seleccionar cliente"}
+            </Button>
+          </div>
+
+          <div className="ti-meta-form-grid ti-pricing-context-grid ti-pricing-context-grid--compact">
+            <label className="ti-form-span-3">
               <span className="ti-field-label">Lista de precios</span>
               {loadingSelectors ? (
                 <div className="ti-field-note"><Spinner size="sm" /> Cargando opciones...</div>
@@ -309,16 +354,32 @@ export function PricingWorkbench({
               )}
             </label>
             <label>
-              <span className="ti-field-label">Margen operador %</span>
+              <span className="ti-field-label">Recargo comercial %</span>
               <Input
                 type="number"
-                value={operatorMargin}
-                onChange={(e) => onOperatorMarginChange(Math.max(0, Math.min(100, Number(e.target.value))))}
+                value={commercialAdjustmentPct || ""}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  onCommercialAdjustmentPctChange(!isNaN(v) && v >= 0 && v <= 100 ? v : 0);
+                }}
                 min="0"
                 max="100"
                 step="0.1"
+                placeholder="0"
               />
-              <span className="ti-field-note">Solo vista operador</span>
+            </label>
+            <label>
+              <span className="ti-field-label">Instalación</span>
+              <Input
+                type="number"
+                value={installationAmount || ""}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  onInstallationAmountChange(!isNaN(v) && v >= 0 ? v : 0);
+                }}
+                min="0"
+                placeholder="0"
+              />
             </label>
             <label>
               <span className="ti-field-label">Desc. manual %</span>
@@ -331,14 +392,6 @@ export function PricingWorkbench({
                 step="0.1"
               />
             </label>
-            <label className="ti-form-span-2">
-              <span className="ti-field-label">Motivo desc.</span>
-              <Input
-                value={quoteManualDiscountReason}
-                onChange={(e) => onQuoteManualDiscountReasonChange(e.target.value)}
-                placeholder="Opcional"
-              />
-            </label>
           </div>
         </WorkbenchSection>
 
@@ -347,11 +400,12 @@ export function PricingWorkbench({
           className="ti-lines-section"
           actions={
             <>
-              <Button variant="secondary" onClick={onAddQuoteItem}>
+              <Button variant="secondary" onClick={onAddQuoteItem} className="ti-pricing-lines-action">
                 + Nueva linea
               </Button>
               <Button
                 variant="primary"
+                className="ti-pricing-lines-action"
                 onClick={onCalculateAll}
                 disabled={loadingBatch || !selectedPriceListName}
                 title="Calcula todos los ítems en una sola operación"
@@ -361,19 +415,19 @@ export function PricingWorkbench({
             </>
           }
         >
-          <DataTable>
+          <DataTable className="ti-pricing-lines-table">
             <thead>
               <tr>
                 <th>Orden</th>
-                <th>SKU / Producto</th>
+                <th>Producto</th>
                 <th>Agrupador</th>
-                <th>Categoria</th>
-                <th>Cantidad</th>
-                <th>Ancho / Alto</th>
-                <th>P. Unit</th>
+                <th>Cat.</th>
+                <th>Cant.</th>
+                <th>Medida</th>
+                <th>Unit.</th>
                 <th>Total</th>
-                <th>Estado</th>
-                <th>Acciones</th>
+                <th>Est.</th>
+                <th>Acc.</th>
               </tr>
             </thead>
             <tbody>
@@ -381,21 +435,21 @@ export function PricingWorkbench({
                 <tr
                   key={item.id}
                   className={activeQuoteItemId === item.id ? "ti-row-selected" : undefined}
-                  onClick={() => onFetchQuoteItemMatches(item.id)}
+                  onClick={() => onSelectQuoteItem(item.id)}
                 >
                   <td>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "2px", alignItems: "center" }}>
+                    <div className="ti-pricing-line-order">
                       <button
-                        style={{ background: "none", border: "none", cursor: "pointer", padding: "0 4px", fontSize: "0.75em" }}
+                        className="ti-pricing-line-order__btn"
                         onClick={(e) => { e.stopPropagation(); onMoveItemUp(item.id); }}
                         disabled={idx === 0}
                         title="Subir"
                       >
                         ▲
                       </button>
-                      <span style={{ textAlign: "center", fontSize: "0.8em" }}>{idx + 1}</span>
+                      <span className="ti-pricing-line-order__index">{idx + 1}</span>
                       <button
-                        style={{ background: "none", border: "none", cursor: "pointer", padding: "0 4px", fontSize: "0.75em" }}
+                        className="ti-pricing-line-order__btn"
                         onClick={(e) => { e.stopPropagation(); onMoveItemDown(item.id); }}
                         disabled={idx === quoteItems.length - 1}
                         title="Bajar"
@@ -407,7 +461,7 @@ export function PricingWorkbench({
                   <td>
                     <div className="ti-quote-line-sku">
                       <Select
-                        style={{ width: "170px", fontSize: "0.82em" }}
+                        className="ti-pricing-line-sku-select"
                         value={item.skuCode ?? ""}
                         onClick={(e) => e.stopPropagation()}
                         onChange={(e) => onUpdateQuoteItem(item.id, { skuCode: e.target.value, calcStatus: undefined })}
@@ -427,14 +481,14 @@ export function PricingWorkbench({
                       onClick={(e) => e.stopPropagation()}
                       onChange={(e) => onUpdateQuoteItem(item.id, { roomAreaName: e.target.value })}
                       placeholder="Ej: Living, Dormitorio"
-                      style={{ width: "150px", fontSize: "0.82em" }}
+                      style={{ width: "132px", fontSize: "0.8em" }}
                       list="agrupador-suggestions"
                     />
                   </td>
                   <td>
                     <div className="ti-quote-line-description">
                       <Select
-                        style={{ width: "148px", fontSize: "0.8em" }}
+                        className="ti-pricing-line-category-select"
                         value={item.categoryId || ""}
                         onClick={(e) => e.stopPropagation()}
                         onChange={(e) => {
@@ -460,7 +514,7 @@ export function PricingWorkbench({
                             value={newCategoryName}
                             onChange={(e) => onNewCategoryNameChange(e.target.value)}
                             placeholder="Nombre"
-                            style={{ width: "90px", fontSize: "0.8em" }}
+                            style={{ width: "82px", fontSize: "0.8em" }}
                             onKeyDown={(e) => {
                               if (e.key === "Enter") {
                                 onCreateCategoryForItem(item.id, newCategoryName);
@@ -481,7 +535,7 @@ export function PricingWorkbench({
                       onClick={(e) => e.stopPropagation()}
                       onChange={(e) => onUpdateQuoteItem(item.id, { quantity: e.target.value })}
                       min="1"
-                      style={{ width: "72px" }}
+                      style={{ width: "64px" }}
                     />
                   </td>
                   <td>
@@ -493,7 +547,7 @@ export function PricingWorkbench({
                         onChange={(e) => onUpdateQuoteItem(item.id, { widthM: e.target.value })}
                         step="0.1"
                         min="0"
-                        style={{ width: "74px" }}
+                        style={{ width: "66px" }}
                       />
                       <Input
                         type="number"
@@ -502,7 +556,7 @@ export function PricingWorkbench({
                         onChange={(e) => onUpdateQuoteItem(item.id, { heightM: e.target.value })}
                         step="0.1"
                         min="0"
-                        style={{ width: "74px" }}
+                        style={{ width: "66px" }}
                       />
                     </div>
                   </td>
@@ -527,12 +581,12 @@ export function PricingWorkbench({
                       </span>
                     </span>
                     {item.calcStatus === "error" && item.calcError ? (
-                      <div className="ti-field-note" style={{ marginTop: "0.3rem", maxWidth: "180px", color: "var(--danger)" }}>
+                      <div className="ti-field-note ti-pricing-line-error" style={{ color: "var(--danger)" }}>
                         {item.calcError}
                       </div>
                     ) : null}
                   </td>
-                  <td style={{ whiteSpace: "nowrap" }}>
+                  <td className="ti-pricing-lines-actions-cell">
                     <div className="actions-cell">
                       <Button
                         variant="secondary"
@@ -568,59 +622,114 @@ export function PricingWorkbench({
           </datalist>
         </WorkbenchSection>
 
-        {status ? <p className="status-note" style={{ marginTop: 0 }}>{status}</p> : null}
+        </WorkbenchLayout>
 
-      </WorkbenchLayout>
+        <ActionFooter
+          className="ti-pricing-footer"
+          left={
+            <Button variant="secondary" onClick={() => {
+              if (quoteBatchId) {
+                if (!confirm("Vas a descartar los cambios del borrador. ¿Continuar?")) return;
+              }
+              onResetQuoteWorkbench();
+            }}>
+              {quoteBatchId ? "Nuevo" : "Reiniciar"}
+            </Button>
+          }
+          summary={
+            <div className="ti-pricing-footer-summary">
+              <span className="ti-pricing-footer-summary__meta">{selectedPriceListName || "Sin lista"}</span>
+              <span className="ti-pricing-footer-summary__meta">({quoteItems.length} lineas)</span>
+              <span className="ti-pricing-footer-summary__metric">Total <strong>${quoteTotal.toLocaleString()}</strong></span>
+            </div>
+          }
+          actions={
+            <>
+              <Button
+                variant="secondary"
+                onClick={onSaveToHistory}
+                disabled={loadingSave || loadingBatch || !selectedPriceListName || !quoteReady}
+                title="Guarda la cotización en el historial sin crear venta"
+              >
+                {loadingSave ? <><Spinner size="sm" /> Guardando...</> : quoteBatchId ? "Guardar cambios" : "Guardar cotización"}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={onShowBreakdown}
+                disabled={!quoteReady}
+                title="Ver desglose interno de la cotizacion"
+              >
+                Ver desglose
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={onPreviewCustomer}
+                disabled={loadingPreview || !selectedPriceListName || !quoteReady}
+                title="Vista previa para el cliente"
+              >
+                {loadingPreview ? <Spinner size="sm" /> : "Generar PDF"}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={onCreateDraftFromQuote}
+                disabled={loadingCreateDraft || !selectedPriceListName || !quoteReady || quoteDirty}
+                title={quoteDirty ? "Guarda la cotización antes de crear la venta" : "Crea la venta con todos los ítems calculados"}
+              >
+                {loadingCreateDraft ? <Spinner size="sm" /> : "Crear venta"}
+              </Button>
+            </>
+          }
+        />
+      </article>
 
-      <ActionFooter
-        className="ti-pricing-footer"
-        left={
-          <Button variant="secondary" onClick={() => {
-            if (quoteBatchId) {
-              if (!confirm("Vas a descartar los cambios del borrador. ¿Continuar?")) return;
-            }
-            onResetQuoteWorkbench();
-          }}>
-            {quoteBatchId ? "Nuevo" : "Reiniciar"}
-          </Button>
-        }
-        summary={
-          <div className="ti-pricing-footer-summary">
-            <StatusPill tone={pricingDocumentTone}>{pricingDocumentStatus}</StatusPill>
-            {quoteBatchId ? <StatusPill tone="warning">Editando borrador</StatusPill> : null}
-            <span className="ti-pricing-footer-summary__meta">{selectedPriceListName || "Sin lista"}</span>
-            <span className="ti-pricing-footer-summary__meta">({quoteItems.length} lineas)</span>
-          </div>
-        }
-        actions={
-          <>
-            <Button
-              variant="secondary"
-              onClick={onSaveToHistory}
-              disabled={loadingBatch || !selectedPriceListName || !quoteReady}
-              title="Guarda la cotización en el historial sin crear venta"
-            >
-              {quoteBatchId ? "Guardar cambios" : "Guardar cotización"}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={onPreviewCustomer}
-              disabled={loadingPreview || !selectedPriceListName || !quoteReady}
-              title="Vista previa para el cliente"
-            >
-              {loadingPreview ? <Spinner size="sm" /> : "Generar PDF"}
-            </Button>
-            <Button
-              variant="primary"
-              onClick={onCreateDraftFromQuote}
-              disabled={loadingCreateDraft || !selectedPriceListName || !quoteReady}
-              title="Crea venta draft con todos los ítems calculados"
-            >
-              {loadingCreateDraft ? <Spinner size="sm" /> : "Crear venta"}
-            </Button>
-          </>
-        }
+      <QuoteScrapOpportunityDialog
+        open={quoteOpportunityOpen}
+        loading={loadingActionId === "quote-opportunity"}
+        status={quoteItemMatchesStatus}
+        recoveredValue={quoteOpportunitySummary.recoveredValue}
+        orderCoveragePct={quoteOpportunitySummary.orderCoveragePct}
+        linesWithOpportunity={quoteOpportunitySummary.lines}
+        items={quoteItemMatches}
+        onClose={onCloseQuoteOpportunity}
       />
-    </article>
+
+      <Dialog open={customerContextOpen} onClose={() => setCustomerContextOpen(false)} title="Cliente y contexto">
+        <div className="ti-meta-form-grid">
+          <label className="ti-form-span-2">
+            <span className="ti-field-label">Cliente / Empresa</span>
+            <Select value={quoteCustomerId} onChange={(e) => onApplyQuoteCustomerSelection(e.target.value)}>
+              <option value="">Seleccionar cliente</option>
+              {customers.map((customer) => (
+                <option key={customer.id} value={customer.id}>
+                  {customer.code} - {customer.fullName}{customer.rut ? ` (${customer.rut})` : ""}
+                </option>
+              ))}
+            </Select>
+            {selectedCustomer?.rut ? <span className="ti-field-note">RUT: {selectedCustomer.rut}</span> : null}
+            {customerDiscountInfo.text ? (
+              <span className="ti-field-note" style={{ color: "var(--color-accent)", fontWeight: 500 }}>
+                {customerDiscountInfo.text}
+              </span>
+            ) : null}
+          </label>
+          <label className="ti-form-span-2">
+            <span className="ti-field-label">Cliente visible</span>
+            <Input
+              value={quoteCustomerName}
+              onChange={(e) => onQuoteCustomerNameChange(e.target.value)}
+              placeholder="Nombre del cliente"
+            />
+          </label>
+          <label className="ti-form-span-2">
+            <span className="ti-field-label">Referencia del proyecto</span>
+            <Input
+              value={quoteCustomerReference}
+              onChange={(e) => onQuoteCustomerReferenceChange(e.target.value)}
+              placeholder="Obra / referencia"
+            />
+          </label>
+        </div>
+      </Dialog>
+    </>
   );
 }

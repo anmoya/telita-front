@@ -34,6 +34,12 @@ type SoftHoldPolicy = {
   maxMinutes: number;
 };
 
+type CutSheetPolicyMode = "ENABLED_WITH_PROMPT" | "GUIDE_ONLY" | "DISABLED";
+
+type CutSheetPolicy = {
+  mode: CutSheetPolicyMode;
+};
+
 type SettingsWorkbenchProps = {
   loadingMenu: boolean;
   loadingActionId: string | null;
@@ -42,11 +48,13 @@ type SettingsWorkbenchProps = {
   scrapMinWidthCmInput: string;
   cutScrapPolicy: CutScrapLookupPolicy | null;
   softHoldPolicy: SoftHoldPolicy | null;
+  cutSheetPolicy: CutSheetPolicy | null;
   onRefreshScrapPolicy: () => void;
   onScrapMinWidthCmInputChange: (value: string) => void;
   onUpdateScrapPolicy: (locationPolicy: ScrapLocationPolicy) => void;
   onUpdateCutScrapPolicy: (updates: Partial<CutScrapLookupPolicy>) => void;
   onUpdateSoftHoldPolicy: (updates: Partial<SoftHoldPolicy>) => void;
+  onUpdateCutSheetPolicy: (updates: Partial<CutSheetPolicy>) => void;
 };
 
 export function SettingsWorkbench({
@@ -57,11 +65,13 @@ export function SettingsWorkbench({
   scrapMinWidthCmInput,
   cutScrapPolicy,
   softHoldPolicy,
+  cutSheetPolicy,
   onRefreshScrapPolicy,
   onScrapMinWidthCmInputChange,
   onUpdateScrapPolicy,
   onUpdateCutScrapPolicy,
-  onUpdateSoftHoldPolicy
+  onUpdateSoftHoldPolicy,
+  onUpdateCutSheetPolicy
 }: SettingsWorkbenchProps) {
   const cutModeLabel = cutScrapPolicy
     ? cutScrapPolicy.mode === "OFF"
@@ -108,6 +118,16 @@ export function SettingsWorkbench({
                       <strong>{softHoldPolicy.maxMinutes} min</strong>
                     </div>
                   ) : null}
+                  <div className="ti-sales-summary__row">
+                    <span>Hoja de corte</span>
+                    <strong>
+                      {cutSheetPolicy?.mode === "GUIDE_ONLY"
+                        ? "Solo guía"
+                        : cutSheetPolicy?.mode === "DISABLED"
+                          ? "Deshabilitada"
+                          : "Pregunta reserva"}
+                    </strong>
+                  </div>
                 </div>
               ) : (
                 <EmptyState title="Sin políticas cargadas" description="Refresca para cargar la configuración operativa actual." />
@@ -286,6 +306,50 @@ export function SettingsWorkbench({
                 <p className="status-note">Cargando...</p>
               )}
             </WorkbenchSection>
+
+            <WorkbenchSection title="Hoja de corte">
+              {cutSheetPolicy ? (
+                <>
+                  <p className="status-note">
+                    Modo actual: <strong>{
+                      cutSheetPolicy.mode === "GUIDE_ONLY"
+                        ? "Solo guía"
+                        : cutSheetPolicy.mode === "DISABLED"
+                          ? "Deshabilitada"
+                          : "Pregunta por reserva"
+                    }</strong>
+                  </p>
+                  <div className="ti-section__actions">
+                    <Button
+                      variant={cutSheetPolicy.mode === "ENABLED_WITH_PROMPT" ? "primary" : "secondary"}
+                      onClick={() => onUpdateCutSheetPolicy({ mode: "ENABLED_WITH_PROMPT" })}
+                      disabled={!!loadingActionId}
+                    >
+                      Preguntar reserva
+                    </Button>
+                    <Button
+                      variant={cutSheetPolicy.mode === "GUIDE_ONLY" ? "primary" : "secondary"}
+                      onClick={() => onUpdateCutSheetPolicy({ mode: "GUIDE_ONLY" })}
+                      disabled={!!loadingActionId}
+                    >
+                      Solo guía
+                    </Button>
+                    <Button
+                      variant={cutSheetPolicy.mode === "DISABLED" ? "primary" : "secondary"}
+                      onClick={() => onUpdateCutSheetPolicy({ mode: "DISABLED" })}
+                      disabled={!!loadingActionId}
+                    >
+                      Deshabilitada
+                    </Button>
+                  </div>
+                  <p className="status-note">
+                    Controla si la hoja interna de corte puede reservar retazos, si funciona solo como guía, o si la acción queda oculta.
+                  </p>
+                </>
+              ) : (
+                <p className="status-note">Cargando...</p>
+              )}
+            </WorkbenchSection>
           </div>
         </WorkbenchSection>
       </WorkbenchLayout>
@@ -297,6 +361,7 @@ export function SettingsWorkbench({
             <span className="ti-pricing-footer-summary__meta">Retazo útil: {scrapPolicy?.minWidthCm ?? 50} cm</span>
             <span className="ti-pricing-footer-summary__meta">Chequeo corte: {cutModeLabel}</span>
             <span className="ti-pricing-footer-summary__meta">Soft hold: {softHoldPolicy?.enabled ? "Activo" : "Inactivo"}</span>
+            <span className="ti-pricing-footer-summary__meta">Hoja corte: {cutSheetPolicy?.mode === "GUIDE_ONLY" ? "Guía" : cutSheetPolicy?.mode === "DISABLED" ? "Off" : "Prompt"}</span>
           </div>
         )}
       />

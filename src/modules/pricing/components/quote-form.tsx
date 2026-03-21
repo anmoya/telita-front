@@ -6,6 +6,7 @@ import { CutsWorkbenchContainer } from "./cuts-workbench-container";
 import { DashboardWorkbench } from "./dashboard-workbench";
 import { getStatusLabel } from "../../../shared/api/status-labels";
 import { LabelsWorkbenchContainer } from "./labels-workbench-container";
+import { MarginBreakdownDialog } from "./margin-breakdown-dialog";
 import { PricingWorkbench } from "./pricing-workbench";
 import { QuotePreviewDialog } from "./quote-preview-dialog";
 import { useCutsWorkbench } from "./use-cuts-workbench";
@@ -78,10 +79,16 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewMode, setPreviewMode] = useState<"CUSTOMER" | "INTERNAL">("CUSTOMER");
   const [previewData, setPreviewData] = useState<PreviewResult | null>(null);
+  const [quoteOpportunityOpen, setQuoteOpportunityOpen] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [loadingSave, setLoadingSave] = useState(false);
 
-  // SPEC-32: Operator margin (no persistido en BD)
-  const [operatorMargin, setOperatorMargin] = useState(0);
+  // MVP-06.1: Recargo comercial (porcentaje) e instalación (monto fijo CLP)
+  const [commercialAdjustmentPct, setCommercialAdjustmentPct] = useState(0);
+  const [installationAmount, setInstallationAmount] = useState(0);
+
+  // MVP-06: Desglose interno
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
 
   // MVP-05: Abono del cliente
   const [quoteAmountPaid, setQuoteAmountPaid] = useState(0);
@@ -92,12 +99,60 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
   // MVP-04.1: Modo edición de borrador
   const [quoteBatchId, setQuoteBatchId] = useState<string | null>(null);
 
-  const [status, setStatus] = useState<string>("");
+  // MVP-CIERRE: navegación desde retazos a ventas con búsqueda pre-cargada
+  const [salesInitialSearch, setSalesInitialSearch] = useState("");
+
+  // BUG-01.1: Snapshot del borrador cargado para detectar cambios sin guardar
+  type QuoteBatchSnapshot = {
+    priceListName: string;
+    customerId: string;
+    customerName: string;
+    customerReference: string;
+    commercialAdjustmentPct: number;
+    installationAmount: number;
+    amountPaid: number;
+    items: string;
+  };
+  const [quoteBatchSnapshot, setQuoteBatchSnapshot] = useState<QuoteBatchSnapshot | null>(null);
+
+  const quoteDirty = useMemo(() => {
+    if (!quoteBatchId || !quoteBatchSnapshot) return false;
+    const currentItems = JSON.stringify(
+      quoteItems.map((it) => ({
+        skuCode: it.skuCode ?? "",
+        widthM: it.widthM,
+        heightM: it.heightM,
+        quantity: it.quantity,
+        categoryId: it.categoryId ?? "",
+        categoryName: it.categoryName ?? "",
+        lineNote: it.lineNote ?? "",
+        roomAreaName: it.roomAreaName ?? ""
+      }))
+    );
+    return (
+      quoteBatchSnapshot.priceListName !== selectedPriceListName ||
+      quoteBatchSnapshot.customerId !== quoteCustomerId ||
+      quoteBatchSnapshot.customerName !== quoteCustomerName ||
+      quoteBatchSnapshot.customerReference !== quoteCustomerReference ||
+      quoteBatchSnapshot.commercialAdjustmentPct !== commercialAdjustmentPct ||
+      quoteBatchSnapshot.installationAmount !== installationAmount ||
+      quoteBatchSnapshot.amountPaid !== quoteAmountPaid ||
+      quoteBatchSnapshot.items !== currentItems
+    );
+  }, [quoteBatchId, quoteBatchSnapshot, selectedPriceListName, quoteCustomerId, quoteCustomerName, quoteCustomerReference, commercialAdjustmentPct, installationAmount, quoteAmountPaid, quoteItems]);
+
+  const [status, setStatusMsg] = useState<string>("");
+  const [statusTone, setStatusTone] = useState<"success" | "danger" | null>(null);
+  function setStatus(value: string, tone?: "success" | "danger") {
+    setStatusMsg(value);
+    setStatusTone(tone ?? null);
+  }
   const [scrapStatus, setScrapStatus] = useState<string>("");
   const [cutsStatus, setCutsStatus] = useState<string>("");
 
   const [scrapId, setScrapId] = useState("");
   const [cutFilterStatus, setCutFilterStatus] = useState<CutJobStatus | "ALL">("PENDING");
+  const [cutSearch, setCutSearch] = useState("");
 
   // Modal state
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
@@ -114,9 +169,14 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
 
   const [loadingActionId, setLoadingActionId] = useState<string | null>(null);
   const [loadingModal, setLoadingModal] = useState(false);
+  const quoteItemsBaseSubtotal = useMemo(
+    () => quoteItems.reduce((sum, item) => sum + (item.subtotal || 0), 0),
+    [quoteItems]
+  );
+  const commercialAdjustmentAmount = Math.round(quoteItemsBaseSubtotal * (commercialAdjustmentPct / 100));
   const quoteSubtotalForActions = useMemo(
-    () => quoteItems.reduce((sum, item) => sum + (item.subtotal || 0), 0) * (1 - operatorMargin / 100),
-    [quoteItems, operatorMargin]
+    () => quoteItemsBaseSubtotal + commercialAdjustmentAmount + installationAmount,
+    [quoteItemsBaseSubtotal, commercialAdjustmentAmount, installationAmount]
   );
   const activeQuoteId = useMemo(
     () =>
@@ -130,6 +190,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
   // Load scrap policy on mount so cuts section is ready
   useEffect(() => {
     void settingsWorkbench.loadScrapPolicy();
+    void settingsWorkbench.loadCutSheetPolicy();
     void shell.loadStatusLabels();
     void pricingSupport.loadSelectorsData();
     void pricingSupport.loadCategories();
@@ -162,7 +223,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
     setCustomers,
     setQuoteAmountPaid,
     setQuoteBatchId,
-    setCustomerDiscountInfo
+    setCustomerDiscountInfo,
+    setCommercialAdjustmentPct,
+    setInstallationAmount
   });
   const pricingActions = usePricingWorkbenchActions({
     apiUrl,
@@ -176,15 +239,17 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
     quoteManualDiscountReason,
     quoteSubtotal: quoteSubtotalForActions,
     quoteAmountPaid,
+    commercialAdjustmentPct,
+    installationAmount,
     quoteBatchId,
     setQuoteBatchId,
-    setActiveQuoteItemId,
     setQuoteItemMatches,
     setQuoteItemMatchesStatus,
     setLoadingActionId,
     setLoadingBatch,
     setLoadingCreateDraft,
     setLoadingPreview,
+    setLoadingSave,
     setPreviewData,
     setPreviewMode,
     setPreviewOpen,
@@ -192,7 +257,31 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
     setStatus,
     onRefreshQuotes: shell.loadQuotes,
     onResetQuoteWorkbench: pricingSupport.resetQuoteWorkbench,
-    onNavigate
+    onNavigate,
+    onAfterSave: () => {
+      // BUG-01.1: Actualizar snapshot tras guardar exitoso
+      setQuoteBatchSnapshot({
+        priceListName: selectedPriceListName,
+        customerId: quoteCustomerId,
+        customerName: quoteCustomerName,
+        customerReference: quoteCustomerReference,
+        commercialAdjustmentPct,
+        installationAmount,
+        amountPaid: quoteAmountPaid,
+        items: JSON.stringify(
+          quoteItems.map((it) => ({
+            skuCode: it.skuCode ?? "",
+            widthM: it.widthM,
+            heightM: it.heightM,
+            quantity: it.quantity,
+            categoryId: it.categoryId ?? "",
+            categoryName: it.categoryName ?? "",
+            lineNote: it.lineNote ?? "",
+            roomAreaName: it.roomAreaName ?? ""
+          }))
+        )
+      });
+    }
   });
   const scrapsWorkbench = useScrapsWorkbench({
     apiUrl,
@@ -214,6 +303,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
     apiUrl,
     authedFetch: shell.authedFetch,
     cutFilterStatus,
+    cutSearch,
     scrapPolicy: settingsWorkbench.scrapPolicy,
     softHoldPolicy: settingsWorkbench.softHoldPolicy,
     activeModal,
@@ -245,7 +335,8 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
   useEffect(() => {
     if (activeMenu === "dashboard") void shell.loadDashboard();
     if (activeMenu === "cuts") { void cutsWorkbench.loadCutJobs(); void cutsWorkbench.loadCutScrapPolicy(); void cutsWorkbench.loadSoftHoldPolicy(); }
-    if (activeMenu === "settings") { void settingsWorkbench.loadScrapPolicy(); void cutsWorkbench.loadCutScrapPolicy(); void cutsWorkbench.loadSoftHoldPolicy(); }
+    if (activeMenu === "settings") { void settingsWorkbench.loadScrapPolicy(); void settingsWorkbench.loadCutSheetPolicy(); void cutsWorkbench.loadCutScrapPolicy(); void cutsWorkbench.loadSoftHoldPolicy(); }
+    if (activeMenu === "sales") { void settingsWorkbench.loadCutSheetPolicy(); }
   }, [activeMenu]);
 
   useEffect(() => {
@@ -257,14 +348,39 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
   // MVP-04.1: Cargar borrador cuando se navega desde historial
   useEffect(() => {
     if (editingBatchId && activeMenu === "pricing") {
-      void pricingSupport.loadQuoteBatch(editingBatchId);
+      void pricingSupport.loadQuoteBatch(editingBatchId).then((batch) => {
+        if (!batch) return;
+        setQuoteBatchSnapshot({
+          priceListName: batch.priceListName,
+          customerId: batch.customerId ?? "",
+          customerName: batch.customerName ?? "",
+          customerReference: batch.customerReference ?? "",
+          commercialAdjustmentPct: batch.commercialAdjustmentPct ?? 0,
+          installationAmount: batch.installationAmount ?? 0,
+          amountPaid: batch.amountPaid ?? 0,
+          items: JSON.stringify(
+            batch.lines
+              .sort((a, b) => a.displayOrder - b.displayOrder)
+              .map((l) => ({
+                skuCode: l.skuCode,
+                widthM: String(l.requestedWidthM),
+                heightM: String(l.requestedHeightM),
+                quantity: String(l.quantity),
+                categoryId: l.categoryId ?? "",
+                categoryName: l.categoryName ?? "",
+                lineNote: l.lineNote ?? "",
+                roomAreaName: l.roomAreaName ?? ""
+              }))
+          )
+        });
+      });
       onClearEditingBatch?.();
     }
   }, [editingBatchId, activeMenu]);
 
   const {
     activeQuoteItem,
-    activeQuoteItemOpportunities,
+    quoteOpportunityEligibleCount,
     quoteSubtotal,
     quoteTax,
     quoteTotal,
@@ -278,9 +394,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
     quoteItems,
     activeQuoteItemId,
     quoteItemMatches,
-    operatorMargin,
-    onActiveQuoteItemIdChange: setActiveQuoteItemId,
-    onLoadQuoteScrapOpportunityPreview: (itemId) => void pricingActions.loadQuoteScrapOpportunityPreview(itemId)
+    commercialAdjustmentPct,
+    installationAmount,
+    onActiveQuoteItemIdChange: setActiveQuoteItemId
   });
 
   return (
@@ -300,15 +416,17 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
         <PricingWorkbench
           quoteItems={quoteItems}
           activeQuoteItemId={activeQuoteItemId}
-          activeQuoteItemSkuCode={activeQuoteItem?.skuCode ?? null}
-          activeQuoteItemOpportunityCount={activeQuoteItemOpportunities.length}
+          quoteOpportunityEligibleCount={quoteOpportunityEligibleCount}
           quoteItemMatches={quoteItemMatches}
           quoteItemMatchesStatus={quoteItemMatchesStatus}
           quoteOpportunitySummary={quoteOpportunitySummary}
+          quoteOpportunityOpen={quoteOpportunityOpen}
           loadingActionId={loadingActionId}
           quoteHasCalcErrors={quoteHasCalcErrors}
           quoteSubtotal={quoteSubtotal}
-          operatorMargin={operatorMargin}
+          commercialAdjustmentPct={commercialAdjustmentPct}
+          commercialAdjustmentAmount={commercialAdjustmentAmount}
+          installationAmount={installationAmount}
           quoteTax={quoteTax}
           quoteTotal={quoteTotal}
           quoteAmountPaid={quoteAmountPaid}
@@ -332,19 +450,27 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
           loadingBatch={loadingBatch}
           loadingPreview={loadingPreview}
           loadingCreateDraft={loadingCreateDraft}
+          loadingSave={loadingSave}
+          quoteDirty={quoteDirty}
           quoteReady={quoteReady}
           status={status}
-          onRefreshQuoteScrapOpportunities={() => void pricingActions.loadQuoteScrapOpportunityPreview(activeQuoteItem?.id ?? undefined)}
+          statusTone={statusTone}
+          onOpenQuoteOpportunity={() => {
+            setQuoteOpportunityOpen(true);
+            void pricingActions.handleOpenQuoteOpportunityPreview();
+          }}
+          onCloseQuoteOpportunity={() => setQuoteOpportunityOpen(false)}
           onApplyQuoteCustomerSelection={pricingSupport.applyQuoteCustomerSelection}
           onQuoteCustomerReferenceChange={setQuoteCustomerReference}
           onQuoteCustomerNameChange={setQuoteCustomerName}
           onSelectedPriceListNameChange={setSelectedPriceListName}
-          onOperatorMarginChange={setOperatorMargin}
+          onCommercialAdjustmentPctChange={setCommercialAdjustmentPct}
+          onInstallationAmountChange={setInstallationAmount}
           onQuoteManualDiscountPctChange={setQuoteManualDiscountPct}
           onQuoteManualDiscountReasonChange={setQuoteManualDiscountReason}
           onAddQuoteItem={pricingSupport.addQuoteItem}
           onCalculateAll={() => void pricingActions.handleCalculateAll()}
-          onFetchQuoteItemMatches={(itemId) => void pricingActions.handleFetchQuoteItemMatches(itemId)}
+          onSelectQuoteItem={setActiveQuoteItemId}
           onMoveItemUp={pricingSupport.moveItemUp}
           onMoveItemDown={pricingSupport.moveItemDown}
           onUpdateQuoteItem={pricingSupport.updateQuoteItem}
@@ -352,10 +478,11 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
           onCreateCategoryForItem={(itemId, name) => void pricingSupport.handleCreateCategoryForItem(itemId, name)}
           onCalculateItem={(itemId) => void pricingActions.handleCalculateItem(itemId, pricingSupport.updateQuoteItem)}
           onRemoveQuoteItem={pricingSupport.removeQuoteItem}
-          onResetQuoteWorkbench={pricingSupport.resetQuoteWorkbench}
+          onResetQuoteWorkbench={() => { pricingSupport.resetQuoteWorkbench(); setQuoteBatchSnapshot(null); }}
           onSaveToHistory={() => void pricingActions.handleSaveToHistory()}
           onPreviewCustomer={() => void pricingActions.handlePreview("CUSTOMER")}
           onCreateDraftFromQuote={() => void pricingActions.handleCreateDraftFromQuote()}
+          onShowBreakdown={() => setBreakdownOpen(true)}
         />
       ) : null}
 
@@ -367,7 +494,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
           skuOptions={skuOptions}
           categories={categories}
           customers={customers}
+          cutSheetPolicy={settingsWorkbench.cutSheetPolicy}
           getSaleStatusLabel={(status) => getStatusLabel(shell.statusLabels, "sale", status)}
+          initialSearchQuery={salesInitialSearch}
         />
       ) : null}
 
@@ -380,6 +509,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
           cutPageCount={cutsWorkbench.cutPageCount}
           totalCuts={cutsWorkbench.totalCuts}
           cutFilterStatus={cutFilterStatus}
+          cutSearch={cutSearch}
           compatibleScrapsStatus={compatibleScrapsStatus}
           scrapPolicy={settingsWorkbench.scrapPolicy}
           cutScrapPolicy={settingsWorkbench.cutScrapPolicy}
@@ -396,6 +526,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
           softHoldPolicy={settingsWorkbench.softHoldPolicy}
           statusLabels={shell.statusLabels}
           onSetCutFilterStatus={setCutFilterStatus}
+          onSetCutSearch={setCutSearch}
           onPrevCutPage={cutsWorkbench.prevCutPage}
           onNextCutPage={cutsWorkbench.nextCutPage}
           onRefreshCutJobs={() => void cutsWorkbench.loadCutJobs()}
@@ -406,10 +537,9 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
           onClosePreCutLocation={() => setActiveModal(null)}
           onCloseCompatibleDialog={() => setActiveModal(null)}
           onSkipCompatibleScraps={(cutJobId) => void cutsWorkbench.handleSkipCompatibleScraps(cutJobId)}
-          onAllocateCompatibleScrap={(saleId, saleLineId, scrapId) => void cutsWorkbench.handleAllocateFromOffer(saleId, saleLineId, scrapId)}
+          onAllocateCompatibleScrap={(saleId, saleLineId, scrapId) => cutsWorkbench.handleAllocateFromOffer(saleId, saleLineId, scrapId)}
           onCreateSoftHold={(scrapId, saleId, saleLineId) => void cutsWorkbench.handleCreateSoftHold(scrapId, saleId, saleLineId)}
           onReleaseSoftHold={(scrapId) => void cutsWorkbench.handleReleaseSoftHold(scrapId)}
-          onCompatibleStatusChange={setCompatibleScrapsStatus}
         />
       ) : null}
 
@@ -419,6 +549,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
           scrapStatus={scrapStatus}
           scraps={scraps}
           scrapFilterStatus={scrapsWorkbench.scrapFilterStatus}
+          scrapSearchQuery={scrapsWorkbench.scrapSearchQuery}
           scrapPage={scrapsWorkbench.scrapPage}
           scrapPageCount={scrapsWorkbench.scrapPageCount}
           totalScraps={scrapsWorkbench.totalScraps}
@@ -430,6 +561,7 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
           loadingModal={loadingModal}
           getScrapStatusLabel={(status) => getStatusLabel(shell.statusLabels, "scrap", status)}
           onSetScrapFilterStatus={scrapsWorkbench.setScrapFilterStatus}
+          onScrapSearchQueryChange={scrapsWorkbench.setScrapSearchQuery}
           onSelectScrap={setScrapId}
           onPrevScrapPage={scrapsWorkbench.prevScrapPage}
           onNextScrapPage={scrapsWorkbench.nextScrapPage}
@@ -446,6 +578,12 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
           onModalLocationCodeChange={setModalLocationCode}
           onConfirmAssignLocation={() => void scrapsWorkbench.handleModalAssignLocation()}
           onCloseAssignLocation={() => setActiveModal(null)}
+          labelPreviewHtml={scrapsWorkbench.labelPreviewHtml}
+          onCloseLabelPreview={scrapsWorkbench.closeLabelPreview}
+          onNavigateToSale={(quoteCode) => {
+            setSalesInitialSearch(quoteCode);
+            onNavigate("sales");
+          }}
         />
       ) : null}
 
@@ -468,11 +606,18 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
           scrapMinWidthCmInput={settingsWorkbench.scrapMinWidthCmInput}
           cutScrapPolicy={settingsWorkbench.cutScrapPolicy}
           softHoldPolicy={settingsWorkbench.softHoldPolicy}
-          onRefreshScrapPolicy={() => void settingsWorkbench.loadScrapPolicy()}
+          cutSheetPolicy={settingsWorkbench.cutSheetPolicy}
+          onRefreshScrapPolicy={() => {
+            void settingsWorkbench.loadScrapPolicy();
+            void settingsWorkbench.loadCutSheetPolicy();
+            void cutsWorkbench.loadCutScrapPolicy();
+            void cutsWorkbench.loadSoftHoldPolicy();
+          }}
           onScrapMinWidthCmInputChange={settingsWorkbench.setScrapMinWidthCmInput}
           onUpdateScrapPolicy={(locationPolicy) => void settingsWorkbench.handleUpdateScrapPolicy(locationPolicy, setLoadingActionId)}
           onUpdateCutScrapPolicy={(updates) => void settingsWorkbench.handleUpdateCutScrapPolicy(updates, setLoadingActionId)}
           onUpdateSoftHoldPolicy={(updates) => void settingsWorkbench.handleUpdateSoftHoldPolicy(updates, setLoadingActionId)}
+          onUpdateCutSheetPolicy={(updates) => void settingsWorkbench.handleUpdateCutSheetPolicy(updates, setLoadingActionId)}
         />
       ) : null}
 
@@ -502,6 +647,17 @@ export function QuoteForm({ accessToken, activeMenu, onNavigate, editingBatchId,
         amountPaid={quoteAmountPaid}
         onClose={() => setPreviewOpen(false)}
         onSwitchMode={(mode) => { void pricingActions.handlePreview(mode); }}
+      />
+
+      <MarginBreakdownDialog
+        open={breakdownOpen}
+        quoteItems={quoteItems}
+        customerDiscountInfo={customerDiscountInfo}
+        commercialAdjustmentPct={commercialAdjustmentPct}
+        commercialAdjustmentAmount={commercialAdjustmentAmount}
+        installationAmount={installationAmount}
+        amountPaid={quoteAmountPaid}
+        onClose={() => setBreakdownOpen(false)}
       />
     </section>
   );

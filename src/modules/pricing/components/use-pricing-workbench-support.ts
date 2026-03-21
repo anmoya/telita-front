@@ -30,6 +30,8 @@ type UsePricingWorkbenchSupportArgs = {
   setQuoteAmountPaid: (value: number) => void;
   setQuoteBatchId: (value: string | null) => void;
   setCustomerDiscountInfo: (value: { text: string; pct: number }) => void;
+  setCommercialAdjustmentPct: (value: number) => void;
+  setInstallationAmount: (value: number) => void;
 };
 
 export function usePricingWorkbenchSupport({
@@ -57,7 +59,9 @@ export function usePricingWorkbenchSupport({
   setCustomers,
   setQuoteAmountPaid,
   setQuoteBatchId,
-  setCustomerDiscountInfo
+  setCustomerDiscountInfo,
+    setCommercialAdjustmentPct,
+    setInstallationAmount
 }: UsePricingWorkbenchSupportArgs) {
   function addQuoteItem() {
     setQuoteItems((current) => [
@@ -117,6 +121,8 @@ export function usePricingWorkbenchSupport({
     setQuoteAmountPaid(0);
     setQuoteBatchId(null);
     setCustomerDiscountInfo({ text: "", pct: 0 });
+    setCommercialAdjustmentPct(0);
+    setInstallationAmount(0);
     setActiveQuoteItemId(null);
     setQuoteItemMatches([]);
     setQuoteItemMatchesStatus("");
@@ -264,6 +270,9 @@ export function usePricingWorkbenchSupport({
         customerName: string | null;
         customerReference: string | null;
         amountPaid: number;
+        commercialAdjustmentPct: number;
+        commercialAdjustmentAmount: number;
+        installationAmount: number;
         lines: Array<{
           skuCode: string;
           requestedWidthM: number;
@@ -291,6 +300,8 @@ export function usePricingWorkbenchSupport({
         setCustomerDiscountInfo({ text: "", pct: 0 });
       }
       setQuoteAmountPaid(batch.amountPaid ?? 0);
+      setCommercialAdjustmentPct(batch.commercialAdjustmentPct ?? 0);
+      setInstallationAmount(batch.installationAmount ?? 0);
       setQuoteManualDiscountPct("0");
       setQuoteManualDiscountReason("");
       setQuoteItems(
@@ -313,8 +324,12 @@ export function usePricingWorkbenchSupport({
           }))
       );
       setStatus(`Editando borrador cargado.`);
+
+      // BUG-01.1: retornar datos del batch para snapshot
+      return batch;
     } catch {
       setStatus("Error al cargar cotización.");
+      return null;
     }
   }
 

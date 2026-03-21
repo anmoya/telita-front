@@ -114,6 +114,12 @@ export function QuotePreviewDialog({
 
             <div style={{ textAlign: "right", fontSize: "0.9em", lineHeight: "1.8" }}>
               <div>Subtotal: <strong>${previewData.totals.subtotal.toLocaleString()}</strong></div>
+              {(previewData.totals.commercialAdjustmentAmount ?? 0) > 0 ? (
+                <div>Recargo comercial ({previewData.totals.commercialAdjustmentPct ?? 0}%): <strong>${Math.round(previewData.totals.commercialAdjustmentAmount!).toLocaleString()}</strong></div>
+              ) : null}
+              {(previewData.totals.installationAmount ?? 0) > 0 ? (
+                <div>Instalación: <strong>${Math.round(previewData.totals.installationAmount!).toLocaleString()}</strong></div>
+              ) : null}
               <div>IVA (19%): <strong>${Math.round(previewData.totals.tax).toLocaleString()}</strong></div>
               <div style={{ fontSize: "1.05em", fontWeight: 700 }}>
                 Total: ${Math.round(previewData.totals.total).toLocaleString()} {previewData.totals.currencyCode}

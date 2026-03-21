@@ -15,7 +15,7 @@ import { StatusPill } from "../../../shared/ui/patterns/status-pill";
 import { TotalsSummary } from "../../../shared/ui/patterns/totals-summary";
 import { WorkbenchLayout } from "../../../shared/ui/patterns/workbench-layout";
 import { WorkbenchSection } from "../../../shared/ui/patterns/workbench-section";
-import type { CustomerOption, QuoteItemCategory, SaleLineDraft, SaleLineRow, SaleRow, ScrapMatchRow } from "./pricing-workbench.shared-types";
+import type { CustomerOption, CutSheetPolicy, QuoteItemCategory, SaleLineDraft, SaleLineRow, SaleRow, ScrapMatchRow } from "./pricing-workbench.shared-types";
 
 type SkuOption = {
   code: string;
@@ -53,6 +53,7 @@ type SalesWorkbenchProps = {
   suggestionStatus: string;
   activeSuggestionLineId: string | null;
   activeSuggestionPieceId: string | null;
+  cutSheetPolicy: CutSheetPolicy | null;
   getSaleStatusLabel: (status: string) => string;
   onSalesSearchQueryChange: (value: string) => void;
   customers: CustomerOption[];
@@ -64,6 +65,13 @@ type SalesWorkbenchProps = {
   onCancelSale: (saleId: string) => void;
   onPrintSaleLabels: (saleId: string) => void;
   onOpenDocument: (url: string) => void;
+  onOpenCutSheetPrompt: (saleId: string) => void;
+  onPrintCutSheet: (saleId: string, reserveSuggestedScraps: boolean) => void;
+  docPreviewHtml: string | null;
+  isCutSheetPromptOpen: boolean;
+  cutSheetPromptSaleId: string | null;
+  onCloseDocPreview: () => void;
+  onCloseCutSheetPrompt: () => void;
   onAmountPaidInputChange: (value: string) => void;
   onUpdatePaymentSummary: () => void;
   onPrevPage: () => void;
@@ -151,6 +159,7 @@ export function SalesWorkbench({
   suggestionStatus,
   activeSuggestionLineId,
   activeSuggestionPieceId,
+  cutSheetPolicy,
   customers,
   getSaleStatusLabel,
   onSalesSearchQueryChange,
@@ -162,6 +171,13 @@ export function SalesWorkbench({
   onCancelSale,
   onPrintSaleLabels,
   onOpenDocument,
+  onOpenCutSheetPrompt,
+  onPrintCutSheet,
+  docPreviewHtml,
+  isCutSheetPromptOpen,
+  cutSheetPromptSaleId,
+  onCloseDocPreview,
+  onCloseCutSheetPrompt,
   onAmountPaidInputChange,
   onUpdatePaymentSummary,
   onPrevPage,
@@ -218,7 +234,7 @@ export function SalesWorkbench({
         <WorkbenchLayout
           className="ti-workbench--sales"
           aside={
-            <WorkbenchSection title="Venta seleccionada">
+            <WorkbenchSection title={selectedSale?.status === "CONFIRMED" ? "Orden de Compra" : "Venta seleccionada"}>
               {selectedSale ? (
                 <div style={{ display: "grid", gap: "1rem" }}>
                   <div className="ti-sales-summary">
@@ -257,15 +273,19 @@ export function SalesWorkbench({
 
                   {(() => {
                     const discPct = selectedSale.discountPctApplied;
+                    const commercialAdj = selectedSale.commercialAdjustmentAmount ?? 0;
+                    const installation = selectedSale.installationAmount ?? 0;
                     const subtotalWithDiscount = selectedSale.subtotalAmount;
-                    const subtotalBruto = discPct > 0 ? Math.round(subtotalWithDiscount / (1 - discPct / 100)) : subtotalWithDiscount;
-                    const discountAmount = subtotalBruto - subtotalWithDiscount;
+                    const subtotalBruto = discPct > 0 ? Math.round((subtotalWithDiscount - commercialAdj - installation) / (1 - discPct / 100)) : subtotalWithDiscount - commercialAdj - installation;
+                    const discountAmount = discPct > 0 ? subtotalBruto - (subtotalWithDiscount - commercialAdj - installation) : 0;
 
                     const rows = [
-                      { label: "Subtotal bruto", value: `$${Math.round(subtotalBruto).toLocaleString()}` },
+                      { label: "Subtotal base", value: `$${Math.round(subtotalBruto).toLocaleString()}` },
                       ...(discPct > 0
                         ? [{ label: `Descuento (${discPct}%)`, value: `-$${Math.round(discountAmount).toLocaleString()}`, tone: "success" as const }]
                         : [{ label: "Descuento", value: "—", tone: "muted" as const }]),
+                      ...(commercialAdj > 0 ? [{ label: `Recargo comercial (${selectedSale.commercialAdjustmentPct ?? 0}%)`, value: `$${Math.round(commercialAdj).toLocaleString()}` }] : []),
+                      ...(installation > 0 ? [{ label: "Instalación", value: `$${Math.round(installation).toLocaleString()}` }] : []),
                       { label: "Impuesto (19%)", value: `$${Math.round(selectedSale.taxAmount).toLocaleString()}` },
                       { label: "Abonado", value: `$${Math.round(selectedSale.amountPaid).toLocaleString()}`, tone: (selectedSale.amountPaid > 0 ? "success" : "muted") as "success" | "muted" }
                     ];
@@ -318,7 +338,7 @@ export function SalesWorkbench({
                         variant="secondary"
                         onClick={() => onOpenDocument(`${apiUrl}/sales/${selectedSale.id}/print/sale/html`)}
                       >
-                        Venta
+                        Orden de Compra
                       </Button>
                       <Button
                         variant="secondary"
@@ -326,6 +346,15 @@ export function SalesWorkbench({
                       >
                         OT
                       </Button>
+                      {cutSheetPolicy?.mode !== "DISABLED" ? (
+                        <Button
+                          variant="secondary"
+                          onClick={() => onOpenCutSheetPrompt(selectedSale.id)}
+                          disabled={loadingActionId === `cut-sheet-${selectedSale.id}`}
+                        >
+                          {loadingActionId === `cut-sheet-${selectedSale.id}` ? <Spinner size="sm" /> : "Hoja de corte"}
+                        </Button>
+                      ) : null}
                     </div>
                   ) : null}
 
@@ -799,6 +828,72 @@ export function SalesWorkbench({
             description="Cierra este popup y vuelve a seleccionar la venta."
           />
         )}
+      </Dialog>
+
+      <Dialog
+        open={isCutSheetPromptOpen}
+        onClose={onCloseCutSheetPrompt}
+        title="Hoja de corte"
+      >
+        {cutSheetPromptSaleId ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <p className="status-note" style={{ margin: 0 }}>
+              Puedes imprimir la hoja reservando los retazos sugeridos o usarla solo como guía operativa.
+            </p>
+            <p className="status-note" style={{ margin: 0 }}>
+              Si no reservas, otro operador podría retirar u ofrecer esos mismos retazos antes del corte.
+            </p>
+            <div className="inline-actions">
+              <Button
+                variant="primary"
+                onClick={() => onPrintCutSheet(cutSheetPromptSaleId, true)}
+                disabled={loadingActionId === `cut-sheet-${cutSheetPromptSaleId}`}
+              >
+                {loadingActionId === `cut-sheet-${cutSheetPromptSaleId}` ? <Spinner size="sm" /> : "Imprimir y reservar"}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => onPrintCutSheet(cutSheetPromptSaleId, false)}
+                disabled={loadingActionId === `cut-sheet-${cutSheetPromptSaleId}`}
+              >
+                Imprimir solo guía
+              </Button>
+              <Button variant="secondary" onClick={onCloseCutSheetPrompt} disabled={loadingActionId === `cut-sheet-${cutSheetPromptSaleId}`}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Dialog>
+
+      <Dialog
+        open={docPreviewHtml !== null}
+        onClose={onCloseDocPreview}
+        title="Vista previa del documento"
+        panelClassName="dialog-panel--wide"
+      >
+        {docPreviewHtml ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <iframe
+              id="sale-doc-preview-iframe"
+              srcDoc={docPreviewHtml}
+              style={{ width: "100%", height: "480px", border: "1px solid var(--border)", borderRadius: "6px", background: "#fff" }}
+              title="Documento preview"
+            />
+            <div className="inline-actions">
+              <Button
+                variant="primary"
+                onClick={() => {
+                  const iframe = document.getElementById("sale-doc-preview-iframe") as HTMLIFrameElement | null;
+                  iframe?.contentWindow?.print();
+                }}
+              >
+                Imprimir
+              </Button>
+              <Button variant="secondary" onClick={onCloseDocPreview}>Cerrar</Button>
+            </div>
+          </div>
+        ) : null}
       </Dialog>
     </>
   );

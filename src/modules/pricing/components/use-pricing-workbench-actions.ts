@@ -1,8 +1,8 @@
 "use client";
 
 import type { Dispatch, SetStateAction } from "react";
-import type { MenuKey, PreviewResult, QuoteItem, ScrapMatchRow } from "./pricing-workbench.shared-types";
-import type { QuoteScrapOpportunityRow } from "./pricing-workbench.types";
+import type { MenuKey, PreviewResult, QuoteItem } from "./pricing-workbench.shared-types";
+import type { QuoteScrapOpportunityMatchRow, QuoteScrapOpportunityPreview, QuoteScrapOpportunityRow } from "./pricing-workbench.types";
 
 type UsePricingWorkbenchActionsArgs = {
   apiUrl: string;
@@ -16,23 +16,26 @@ type UsePricingWorkbenchActionsArgs = {
   quoteManualDiscountReason: string;
   quoteSubtotal: number;
   quoteAmountPaid: number;
+  commercialAdjustmentPct: number;
+  installationAmount: number;
   quoteBatchId: string | null;
   setQuoteBatchId: (value: string | null) => void;
-  setActiveQuoteItemId: (value: string | null) => void;
   setQuoteItemMatches: (value: QuoteScrapOpportunityRow[]) => void;
   setQuoteItemMatchesStatus: (value: string) => void;
   setLoadingActionId: (value: string | null) => void;
   setLoadingBatch: (value: boolean) => void;
   setLoadingCreateDraft: (value: boolean) => void;
   setLoadingPreview: (value: boolean) => void;
+  setLoadingSave: (value: boolean) => void;
   setPreviewData: (value: PreviewResult | null) => void;
   setPreviewMode: (value: "CUSTOMER" | "INTERNAL") => void;
   setPreviewOpen: (value: boolean) => void;
   setQuoteItems: Dispatch<SetStateAction<QuoteItem[]>>;
-  setStatus: (value: string) => void;
+  setStatus: (value: string, tone?: "success" | "danger") => void;
   onRefreshQuotes: () => Promise<void>;
   onResetQuoteWorkbench: () => void;
   onNavigate: (menu: MenuKey) => void;
+  onAfterSave?: () => void;
 };
 
 export function usePricingWorkbenchActions({
@@ -47,15 +50,17 @@ export function usePricingWorkbenchActions({
   quoteManualDiscountReason,
   quoteSubtotal,
   quoteAmountPaid,
+  commercialAdjustmentPct,
+  installationAmount,
   quoteBatchId,
   setQuoteBatchId,
-  setActiveQuoteItemId,
   setQuoteItemMatches,
   setQuoteItemMatchesStatus,
   setLoadingActionId,
   setLoadingBatch,
   setLoadingCreateDraft,
   setLoadingPreview,
+  setLoadingSave,
   setPreviewData,
   setPreviewMode,
   setPreviewOpen,
@@ -63,11 +68,10 @@ export function usePricingWorkbenchActions({
   setStatus,
   onRefreshQuotes,
   onResetQuoteWorkbench,
-  onNavigate
+  onNavigate,
+  onAfterSave
 }: UsePricingWorkbenchActionsArgs) {
-  async function loadQuoteScrapOpportunityPreview(focusItemId?: string) {
-    if (focusItemId) setActiveQuoteItemId(focusItemId);
-
+  async function loadQuoteScrapOpportunityPreview() {
     const eligibleItems = quoteItems
       .map((item, index) => ({ item, index }))
       .filter(({ item }) => {
@@ -79,77 +83,68 @@ export function usePricingWorkbenchActions({
 
     if (eligibleItems.length === 0) {
       setQuoteItemMatches([]);
-      setQuoteItemMatchesStatus("Completa SKU, ancho, alto y cantidad para ver oportunidades con retazos.");
-      return;
+      setQuoteItemMatchesStatus("Completa SKU, ancho, alto y cantidad para revisar retazos útiles.");
+      return false;
     }
 
-    setQuoteItemMatchesStatus("Buscando oportunidades con retazos...");
+    setQuoteItemMatchesStatus("Buscando retazos útiles para esta cotización...");
     try {
-      const requestErrors: string[] = [];
-      const results = await Promise.all(
-        eligibleItems.map(async ({ item, index }) => {
-          const qty = Math.max(1, Number(item.quantity));
-          const response = await authedFetch(
-            `${apiUrl}/scraps/match?branchCode=MAIN&skuCode=${encodeURIComponent(item.skuCode ?? "")}&requestedWidthM=${item.widthM}&requestedHeightM=${item.heightM}&limit=${Math.min(qty, 10)}`
-          );
-          if (!response.ok) {
-            const body = (await response.json().catch(() => null)) as { message?: string } | null;
-            requestErrors.push(body?.message ?? `No se pudo evaluar ${item.skuCode ?? "la línea"} (HTTP ${response.status}).`);
-            return [] as QuoteScrapOpportunityRow[];
-          }
-          const rows = (await response.json()) as ScrapMatchRow[];
-          const pieceSalesValue = qty > 0 ? (item.subtotal ?? 0) / qty : 0;
-          return rows.slice(0, qty).map((match, matchIndex) => ({
-            key: `${item.id}-${match.id}-${matchIndex + 1}`,
+      const response = await authedFetch(`${apiUrl}/scraps/quote-opportunity-preview`, {
+        method: "POST",
+        body: JSON.stringify({
+          branchCode: "MAIN",
+          items: eligibleItems.map(({ item, index }) => ({
             itemId: item.id,
             itemIndex: index + 1,
-            pieceIndex: matchIndex + 1,
-            pieceTotal: qty,
-            skuCode: item.skuCode ?? "",
+            skuCode: item.skuCode,
             requestedWidthM: Number(item.widthM),
             requestedHeightM: Number(item.heightM),
-            scrapId: match.id,
-            locationCode: match.locationCode,
-            areaM2: match.areaM2,
-            excessAreaM2: match.excessAreaM2,
-            salesValue: pieceSalesValue,
-            recoveredValue: pieceSalesValue
-          }));
+            quantity: Number(item.quantity)
+          }))
         })
-      );
-
-      const flattened = results.flat().sort((a, b) => {
-        if (a.itemIndex !== b.itemIndex) return a.itemIndex - b.itemIndex;
-        return a.pieceIndex - b.pieceIndex;
       });
-
-      setQuoteItemMatches(flattened);
-
-      if (requestErrors.length > 0) {
-        setQuoteItemMatchesStatus(requestErrors[0]);
-        return;
+      const data = await response.json().catch(() => null) as (QuoteScrapOpportunityPreview & { message?: string }) | null;
+      if (!response.ok) {
+        setQuoteItemMatches([]);
+        setQuoteItemMatchesStatus(data?.message ?? "No se pudo calcular el preview de retazos.");
+        return false;
       }
 
-      if (flattened.length === 0) {
+      const flattened = (data?.items ?? []).map((match) => {
+        const item = quoteItems.find((entry) => entry.id === match.itemId);
+        const qty = Math.max(1, Number(item?.quantity ?? match.pieceTotal));
+        const pieceSalesValue = qty > 0 ? (item?.subtotal ?? 0) / qty : 0;
+        return {
+          ...(match as QuoteScrapOpportunityMatchRow),
+          salesValue: pieceSalesValue,
+          recoveredValue: pieceSalesValue
+        } satisfies QuoteScrapOpportunityRow;
+      });
+      setQuoteItemMatches(flattened);
+
+      if (!data || flattened.length === 0) {
         setQuoteItemMatchesStatus("Sin oportunidades con retazos para las líneas actuales.");
-        return;
+        return true;
       }
 
       const recoveredValue = flattened.reduce((sum, row) => sum + row.recoveredValue, 0);
       const orderCoveragePct = quoteSubtotal > 0 ? Math.min(100, (recoveredValue / quoteSubtotal) * 100) : 0;
+
       setQuoteItemMatchesStatus(
-        `${flattened.length} pieza(s) reutilizable(s). Margen potencial recuperado: $${Math.round(recoveredValue).toLocaleString()} · Cobertura potencial de la orden: ${orderCoveragePct.toFixed(0)}%.`
+        `${data.summary.assignedPieces} pieza(s) reutilizable(s). Margen potencial recuperado: $${Math.round(recoveredValue).toLocaleString()} · Cobertura potencial de la orden: ${orderCoveragePct.toFixed(0)}%.`
       );
+      return true;
     } catch {
       setQuoteItemMatches([]);
       setQuoteItemMatchesStatus("No se pudo calcular el preview de retazos.");
+      return false;
     }
   }
 
-  async function handleFetchQuoteItemMatches(itemId: string) {
-    setLoadingActionId(`quote-match-${itemId}`);
+  async function handleOpenQuoteOpportunityPreview() {
+    setLoadingActionId("quote-opportunity");
     try {
-      await loadQuoteScrapOpportunityPreview(itemId);
+      await loadQuoteScrapOpportunityPreview();
     } finally {
       setLoadingActionId(null);
     }
@@ -226,13 +221,13 @@ export function usePricingWorkbenchActions({
         );
 
         if (data.hasErrors) {
-          setStatus(lineErrors[0] ?? "Cálculo con errores en algunas filas.");
+          setStatus(lineErrors[0] ?? "Cálculo con errores en algunas filas.", "danger");
         } else {
-          setStatus(`Total: $${(data.totalAmount ?? 0).toLocaleString()} CLP (subtotal $${(data.subtotalAmount ?? 0).toLocaleString()} + IVA $${(data.taxAmount ?? 0).toLocaleString()})`);
+          setStatus(`Total: $${(data.totalAmount ?? 0).toLocaleString()} CLP (subtotal $${(data.subtotalAmount ?? 0).toLocaleString()} + IVA $${(data.taxAmount ?? 0).toLocaleString()})`, "success");
         }
       }
     } catch (err) {
-      setStatus(`Error al calcular batch: ${String(err)}`);
+      setStatus(`Error al calcular batch: ${String(err)}`, "danger");
     } finally {
       setLoadingBatch(false);
     }
@@ -261,6 +256,8 @@ export function usePricingWorkbenchActions({
           manualDiscountPct: Number(quoteManualDiscountPct || 0) || undefined,
           manualDiscountReason: quoteManualDiscountReason || undefined,
           amountPaid: quoteAmountPaid > 0 ? quoteAmountPaid : undefined,
+          commercialAdjustmentPct: commercialAdjustmentPct > 0 ? commercialAdjustmentPct : undefined,
+          installationAmount: installationAmount > 0 ? installationAmount : undefined,
           items: quoteItems.map((item, idx) => ({
             skuCode: item.skuCode ?? "",
             requestedWidthM: Number(item.widthM),
@@ -282,7 +279,7 @@ export function usePricingWorkbenchActions({
         const detail = data.lineErrors
           ? data.lineErrors.map((error) => `Item ${error.index + 1}: ${error.error}`).join("; ")
           : (data.message ?? "Error desconocido");
-        setStatus(`Error: ${detail}`);
+        setStatus(`Error: ${detail}`, "danger");
         return;
       }
 
@@ -301,6 +298,8 @@ export function usePricingWorkbenchActions({
             customerName: quoteCustomerName || undefined,
             customerReference: quoteCustomerReference || undefined,
             amountPaid: quoteAmountPaid > 0 ? quoteAmountPaid : undefined,
+            commercialAdjustmentPct: commercialAdjustmentPct > 0 ? commercialAdjustmentPct : undefined,
+            installationAmount: installationAmount > 0 ? installationAmount : undefined,
             lines: quoteItems.map((item, idx) => ({
               skuCode: item.skuCode ?? "",
               requestedWidthM: Number(item.widthM),
@@ -327,7 +326,7 @@ export function usePricingWorkbenchActions({
       onResetQuoteWorkbench();
       onNavigate("sales");
     } catch (err) {
-      setStatus(`Error al crear draft: ${String(err)}`);
+      setStatus(`Error al crear draft: ${String(err)}`, "danger");
     } finally {
       setLoadingCreateDraft(false);
     }
@@ -353,6 +352,8 @@ export function usePricingWorkbenchActions({
           priceListName: selectedPriceListName,
           customerName: quoteCustomerName || undefined,
           customerReference: quoteCustomerReference || undefined,
+          commercialAdjustmentPct: commercialAdjustmentPct > 0 ? commercialAdjustmentPct : undefined,
+          installationAmount: installationAmount > 0 ? installationAmount : undefined,
           items: quoteItems.map((item) => ({
             skuCode: item.skuCode ?? "",
             requestedWidthM: Number(item.widthM),
@@ -382,6 +383,7 @@ export function usePricingWorkbenchActions({
 
   async function handleSaveToHistory() {
     if (!selectedPriceListName) return;
+    setLoadingSave(true);
     const isUpdate = Boolean(quoteBatchId);
     const url = isUpdate ? `${apiUrl}/quotes/batch/${quoteBatchId}` : `${apiUrl}/quotes/batch`;
     const method = isUpdate ? "PATCH" : "POST";
@@ -402,8 +404,8 @@ export function usePricingWorkbenchActions({
     }));
 
     const payload = isUpdate
-      ? { customerId: quoteCustomerId || null, customerName: quoteCustomerName || undefined, customerReference: quoteCustomerReference || undefined, amountPaid: quoteAmountPaid > 0 ? quoteAmountPaid : 0, lines }
-      : { branchCode: "MAIN", priceListName: selectedPriceListName, customerId: quoteCustomerId || undefined, customerName: quoteCustomerName || undefined, customerReference: quoteCustomerReference || undefined, amountPaid: quoteAmountPaid > 0 ? quoteAmountPaid : undefined, lines };
+      ? { customerId: quoteCustomerId || null, customerName: quoteCustomerName || undefined, customerReference: quoteCustomerReference || undefined, amountPaid: quoteAmountPaid > 0 ? quoteAmountPaid : 0, commercialAdjustmentPct: commercialAdjustmentPct > 0 ? commercialAdjustmentPct : 0, installationAmount: installationAmount > 0 ? installationAmount : 0, lines }
+      : { branchCode: "MAIN", priceListName: selectedPriceListName, customerId: quoteCustomerId || undefined, customerName: quoteCustomerName || undefined, customerReference: quoteCustomerReference || undefined, amountPaid: quoteAmountPaid > 0 ? quoteAmountPaid : undefined, commercialAdjustmentPct: commercialAdjustmentPct > 0 ? commercialAdjustmentPct : undefined, installationAmount: installationAmount > 0 ? installationAmount : undefined, lines };
 
     try {
       const response = await authedFetch(url, { method, body: JSON.stringify(payload) });
@@ -412,13 +414,16 @@ export function usePricingWorkbenchActions({
           const data = await response.json() as { id?: string };
           if (data.id) setQuoteBatchId(data.id);
         }
-        setStatus(isUpdate ? "Cotización actualizada." : "Cotización guardada en historial.");
+        setStatus(isUpdate ? "Cotización actualizada." : "Cotización guardada en historial.", "success");
+        onAfterSave?.();
         await onRefreshQuotes();
       } else {
-        setStatus("Error al guardar en historial.");
+        setStatus("Error al guardar en historial.", "danger");
       }
     } catch {
-      setStatus("Error al guardar en historial.");
+      setStatus("Error al guardar en historial.", "danger");
+    } finally {
+      setLoadingSave(false);
     }
   }
 
@@ -461,7 +466,7 @@ export function usePricingWorkbenchActions({
         calcError: undefined
       });
     } catch (error) {
-      setStatus(`Error al calcular: ${String(error)}`);
+      setStatus(`Error al calcular: ${String(error)}`, "danger");
     } finally {
       setLoadingActionId(null);
     }
@@ -469,7 +474,7 @@ export function usePricingWorkbenchActions({
 
   return {
     loadQuoteScrapOpportunityPreview,
-    handleFetchQuoteItemMatches,
+    handleOpenQuoteOpportunityPreview,
     handleCalculateAll,
     handleCreateDraftFromQuote,
     handlePreview,

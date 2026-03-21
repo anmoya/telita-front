@@ -11,6 +11,7 @@ import type { QuoteScrapOpportunityRow } from "./pricing-workbench.types";
 
 type QuoteScrapOpportunityPanelProps = {
   quoteItemsCount: number;
+  hasAnySkuSelected: boolean;
   activeQuoteItemSkuCode?: string | null;
   activeQuoteItemOpportunityCount: number;
   quoteItemMatches: QuoteScrapOpportunityRow[];
@@ -27,6 +28,7 @@ type QuoteScrapOpportunityPanelProps = {
 
 export function QuoteScrapOpportunityPanel({
   quoteItemsCount,
+  hasAnySkuSelected,
   activeQuoteItemSkuCode,
   activeQuoteItemOpportunityCount,
   quoteItemMatches,
@@ -38,20 +40,22 @@ export function QuoteScrapOpportunityPanel({
   return (
     <WorkbenchSection
       title="Oportunidad con retazos"
+      className="ti-pricing-scrap-section"
       actions={
         quoteItemsCount > 0 ? (
-          <Button variant="secondary" onClick={onRefresh} disabled={loading}>
-            {loading ? <Spinner size="sm" /> : "Recalcular"}
+          <Button variant="secondary" className="ti-pricing-scrap-section__cta" onClick={onRefresh} disabled={loading || !hasAnySkuSelected}>
+            {loading ? <Spinner size="sm" /> : "Verificar Retazos"}
           </Button>
         ) : null
       }
     >
       {quoteItemMatches.length > 0 ? (
         <>
-          <p className="ti-field-note" style={{ marginBottom: "0.85rem" }}>
+          <p className="ti-field-note ti-pricing-scrap-section__status" style={{ marginBottom: "0.7rem" }}>
             {quoteItemMatchesStatus}
           </p>
           <TotalsSummary
+            className="ti-pricing-scrap-summary"
             rows={[
               { label: "Piezas reutilizables", value: String(quoteOpportunitySummary.pieces) },
               { label: "Lineas con oportunidad", value: String(quoteOpportunitySummary.lines) },
@@ -63,14 +67,14 @@ export function QuoteScrapOpportunityPanel({
             ]}
             totalLabel="Cobertura potencial"
             totalValue={`${quoteOpportunitySummary.orderCoveragePct.toFixed(0)}%`}
-            note="Preview comercial: cotización no asigna ni reserva retazos."
+            note="Preview comercial. No asigna ni reserva retazos."
           />
           {activeQuoteItemSkuCode ? (
-            <p className="ti-field-note" style={{ margin: "0.2rem 0 0" }}>
-              Linea activa: <strong>{activeQuoteItemSkuCode}</strong>. {activeQuoteItemOpportunityCount} oportunidad(es) para esta linea.
+            <p className="ti-field-note ti-pricing-scrap-section__active-line" style={{ margin: "0.15rem 0 0" }}>
+              Línea activa: <strong>{activeQuoteItemSkuCode}</strong>. {activeQuoteItemOpportunityCount} oportunidad(es).
             </p>
           ) : null}
-          <div style={{ display: "grid", gap: "0.85rem" }}>
+          <div className="ti-pricing-scrap-section__matches">
             {quoteItemMatches.map((match, index) => {
               const tone = index === 0 || match.excessAreaM2 <= 0.25 ? "success" : match.excessAreaM2 > 1 ? "warning" : "neutral";
               const badgeLabel = match.excessAreaM2 <= 0.25 ? "Exacto" : tone === "warning" ? "Alternativa" : "Muy cercano";

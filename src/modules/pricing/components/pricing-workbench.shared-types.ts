@@ -36,12 +36,19 @@ export type SoftHoldPolicy = {
   maxMinutes: number;
 };
 
+export type CutSheetPolicyMode = "ENABLED_WITH_PROMPT" | "GUIDE_ONLY" | "DISABLED";
+
+export type CutSheetPolicy = {
+  mode: CutSheetPolicyMode;
+};
+
 export type SoftHoldInfo = {
   active: boolean;
   id?: string;
   scrapId?: string;
   saleId?: string;
   saleLineId?: string;
+  saleLinePieceId?: string;
   status?: string;
   expiresAt?: string;
   heldBy?: { email: string; fullName: string };
@@ -117,7 +124,7 @@ export type PreviewResult = {
   header: { branchName: string; date: string; priceListName: string };
   customer: { name: string | null; reference: string | null };
   lines: PreviewLine[];
-  totals: { subtotal: number; tax: number; total: number; currencyCode: string };
+  totals: { subtotal: number; commercialAdjustmentPct?: number; commercialAdjustmentAmount?: number; installationAmount?: number; tax: number; total: number; currencyCode: string };
   hasErrors: boolean;
   internalBreakdown?: unknown;
 };
@@ -222,6 +229,9 @@ export type SaleRow = {
   discountSource: string;
   discountCodeApplied: string | null;
   discountPctApplied: number;
+  commercialAdjustmentPct: number;
+  commercialAdjustmentAmount: number;
+  installationAmount: number;
   subtotalAmount: number;
   taxAmount: number;
   totalAmount: number;
@@ -265,6 +275,7 @@ export type ScrapRow = {
   skuCode: string;
   locationCode: string | null;
   quoteId: string | null;
+  quoteCode: string | null;
   createdAt: string;
 };
 
@@ -307,6 +318,7 @@ export type LabelRow = {
   saleLineId: string | null;
   scrapId: string | null;
   quoteId: string | null;
+  quoteCode: string | null;
   createdAt: string;
   lastPrintedAt: string | null;
 };
@@ -328,6 +340,7 @@ export type CutJobRow = {
   id: string;
   saleId: string;
   saleLineId: string;
+  quoteCode: string | null;
   status: CutJobStatus;
   cutAt: string | null;
   requestedWidthM: number;

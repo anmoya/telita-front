@@ -10,7 +10,7 @@ import type {
   ScrapPolicy,
   SoftHoldInfo,
   SoftHoldPolicy
-} from "./pricing-workbench.shared-types";
+} from "../../operations/shared/workbench.shared-types";
 
 type CutsWorkbenchContainerProps = {
   loadingMenu: boolean;

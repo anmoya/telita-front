@@ -3,7 +3,7 @@
 import { getStatusLabel, type StatusLabelsByEntity } from "../../../shared/api/status-labels";
 import { ScrapsWorkbench } from "./scraps-workbench";
 import { useScrapsWorkbench } from "./use-scraps-workbench";
-import type { ActiveModal, ScrapRow } from "./pricing-workbench.shared-types";
+import type { ActiveModal, ScrapRow } from "../../operations/shared/workbench.shared-types";
 
 type ScrapsWorkbenchContainerProps = {
   apiUrl: string;

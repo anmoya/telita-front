@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import type { ActiveModal, ScrapRow } from "./pricing-workbench.shared-types";
+import type { ActiveModal, ScrapRow } from "../../operations/shared/workbench.shared-types";
 
 type ScrapFilterStatus = "ALL" | "PENDING_INBOUND" | "PENDING_STORAGE" | "STORED" | "USED" | "DISCARDED";
 

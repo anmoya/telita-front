@@ -6,7 +6,7 @@ import { Dialog } from "../../../shared/ui/primitives/dialog";
 import { EmptyState } from "../../../shared/ui/primitives/empty-state";
 import { Spinner } from "../../../shared/ui/primitives/spinner";
 import { TotalsSummary } from "../../../shared/ui/patterns/totals-summary";
-import type { QuoteScrapOpportunityRow } from "./pricing-workbench.types";
+import type { QuoteScrapOpportunityRow } from "../../operations/shared/workbench.types";
 
 type QuoteScrapOpportunityDialogProps = {
   open: boolean;

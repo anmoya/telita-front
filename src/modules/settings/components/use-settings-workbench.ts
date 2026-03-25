@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { CutScrapLookupPolicy, CutSheetPolicy, ScrapLocationPolicy, ScrapPolicy, SoftHoldPolicy } from "./pricing-workbench.shared-types";
+import type { CutScrapLookupPolicy, CutSheetPolicy, ScrapLocationPolicy, ScrapPolicy, SoftHoldPolicy } from "../../operations/shared/workbench.shared-types";
 
 type UseSettingsWorkbenchArgs = {
   apiUrl: string;

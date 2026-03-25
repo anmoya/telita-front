@@ -1,8 +1,8 @@
 "use client";
 
 import type { Dispatch, SetStateAction } from "react";
-import type { MenuKey, PreviewResult, QuoteItem } from "./pricing-workbench.shared-types";
-import type { QuoteScrapOpportunityMatchRow, QuoteScrapOpportunityPreview, QuoteScrapOpportunityRow } from "./pricing-workbench.types";
+import type { MenuKey, PreviewResult, QuoteItem } from "../../operations/shared/workbench.shared-types";
+import type { QuoteScrapOpportunityMatchRow, QuoteScrapOpportunityPreview, QuoteScrapOpportunityRow } from "../../operations/shared/workbench.types";
 
 type UsePricingWorkbenchActionsArgs = {
   apiUrl: string;

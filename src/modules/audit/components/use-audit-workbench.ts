@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import type { AuditRow } from "./pricing-workbench.shared-types";
+import type { AuditRow } from "../../operations/shared/workbench.shared-types";
 
 type AuditEntityFilter = "ALL" | "sale" | "cut_job" | "scrap" | "label" | "quote_batch";
 

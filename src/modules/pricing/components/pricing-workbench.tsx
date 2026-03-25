@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Button } from "../../../shared/ui/primitives/button";
 import { Dialog } from "../../../shared/ui/primitives/dialog";
 import { Input } from "../../../shared/ui/primitives/input";
@@ -13,10 +13,19 @@ import { TotalsSummary } from "../../../shared/ui/patterns/totals-summary";
 import { WorkbenchLayout } from "../../../shared/ui/patterns/workbench-layout";
 import { WorkbenchSection } from "../../../shared/ui/patterns/workbench-section";
 import { QuoteScrapOpportunityDialog } from "./quote-scrap-opportunity-dialog";
-import type { QuoteScrapOpportunityRow } from "./pricing-workbench.types";
-import type { CustomerOption, PreviewResult, QuoteItem, QuoteItemCategory } from "./pricing-workbench.shared-types";
+import type { QuoteScrapOpportunityRow } from "../../operations/shared/workbench.types";
+import type { CustomerOption, PreviewResult, QuoteItem, QuoteItemCategory } from "../../operations/shared/workbench.shared-types";
 
-function QuoteRowIcon({ kind }: { kind: "calculate" | "remove" }) {
+function QuoteRowIcon({ kind }: { kind: "calculate" | "duplicate" | "remove" }) {
+  if (kind === "duplicate") {
+    return (
+      <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <rect x="5" y="3" width="7" height="9" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M4.5 5.5H3.8A1.3 1.3 0 0 0 2.5 6.8v5.4a1.3 1.3 0 0 0 1.3 1.3h4.4" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
   if (kind === "remove") {
     return (
       <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
@@ -101,6 +110,7 @@ type PricingWorkbenchProps = {
   onQuoteManualDiscountPctChange: (value: string) => void;
   onQuoteManualDiscountReasonChange: (value: string) => void;
   onAddQuoteItem: () => void;
+  onDuplicateQuoteItem: (itemId: string) => void;
   onCalculateAll: () => void;
   onSelectQuoteItem: (itemId: string) => void;
   onMoveItemUp: (itemId: string) => void;
@@ -170,6 +180,7 @@ export function PricingWorkbench({
   onQuoteManualDiscountPctChange,
   onQuoteManualDiscountReasonChange,
   onAddQuoteItem,
+  onDuplicateQuoteItem,
   onCalculateAll,
   onSelectQuoteItem,
   onMoveItemUp,
@@ -421,7 +432,6 @@ export function PricingWorkbench({
                 <th>Orden</th>
                 <th>Producto</th>
                 <th>Agrupador</th>
-                <th>Cat.</th>
                 <th>Cant.</th>
                 <th>Medida</th>
                 <th>Unit.</th>
@@ -432,186 +442,159 @@ export function PricingWorkbench({
             </thead>
             <tbody>
               {quoteItems.map((item, idx) => (
-                <tr
-                  key={item.id}
-                  className={activeQuoteItemId === item.id ? "ti-row-selected" : undefined}
-                  onClick={() => onSelectQuoteItem(item.id)}
-                >
-                  <td>
-                    <div className="ti-pricing-line-order">
-                      <button
-                        className="ti-pricing-line-order__btn"
-                        onClick={(e) => { e.stopPropagation(); onMoveItemUp(item.id); }}
-                        disabled={idx === 0}
-                        title="Subir"
-                      >
-                        ▲
-                      </button>
-                      <span className="ti-pricing-line-order__index">{idx + 1}</span>
-                      <button
-                        className="ti-pricing-line-order__btn"
-                        onClick={(e) => { e.stopPropagation(); onMoveItemDown(item.id); }}
-                        disabled={idx === quoteItems.length - 1}
-                        title="Bajar"
-                      >
-                        ▼
-                      </button>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="ti-quote-line-sku">
-                      <Select
-                        className="ti-pricing-line-sku-select"
-                        value={item.skuCode ?? ""}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => onUpdateQuoteItem(item.id, { skuCode: e.target.value, calcStatus: undefined })}
-                      >
-                        <option value="">Selecciona SKU</option>
-                        {skuOptions.map((sku) => (
-                          <option key={sku.code} value={sku.code}>
-                            {sku.code}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                  </td>
-                  <td>
-                    <Input
-                      value={item.roomAreaName ?? ""}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => onUpdateQuoteItem(item.id, { roomAreaName: e.target.value })}
-                      placeholder="Ej: Living, Dormitorio"
-                      style={{ width: "132px", fontSize: "0.8em" }}
-                      list="agrupador-suggestions"
-                    />
-                  </td>
-                  <td>
-                    <div className="ti-quote-line-description">
-                      <Select
-                        className="ti-pricing-line-category-select"
-                        value={item.categoryId || ""}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => {
-                          const cat = categories.find((category) => category.id === e.target.value);
-                          onUpdateQuoteItem(item.id, {
-                            categoryId: e.target.value || undefined,
-                            categoryName: cat?.name ?? undefined
-                          });
-                        }}
-                      >
-                        <option value="">Sin categoría</option>
-                        {categories.map((cat) => (
-                          <option key={cat.id} value={cat.id}>
-                            {cat.name}
-                          </option>
-                        ))}
-                        <option value="__new__">+ Nueva...</option>
-                      </Select>
-                      {item.categoryId === "__new__" ? (
-                        <div style={{ display: "flex", gap: "0.25rem" }} onClick={(e) => e.stopPropagation()}>
-                          <Input
-                            type="text"
-                            value={newCategoryName}
-                            onChange={(e) => onNewCategoryNameChange(e.target.value)}
-                            placeholder="Nombre"
-                            style={{ width: "82px", fontSize: "0.8em" }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                onCreateCategoryForItem(item.id, newCategoryName);
-                              }
-                            }}
-                          />
-                          <Button variant="secondary" onClick={() => onCreateCategoryForItem(item.id, newCategoryName)}>
-                            OK
-                          </Button>
-                        </div>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td>
-                    <Input
-                      type="number"
-                      value={item.quantity}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => onUpdateQuoteItem(item.id, { quantity: e.target.value })}
-                      min="1"
-                      style={{ width: "64px" }}
-                    />
-                  </td>
-                  <td>
-                    <div className="ti-quote-line-size">
-                      <Input
-                        type="number"
-                        value={item.widthM}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => onUpdateQuoteItem(item.id, { widthM: e.target.value })}
-                        step="0.1"
-                        min="0"
-                        style={{ width: "66px" }}
-                      />
-                      <Input
-                        type="number"
-                        value={item.heightM}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => onUpdateQuoteItem(item.id, { heightM: e.target.value })}
-                        step="0.1"
-                        min="0"
-                        style={{ width: "66px" }}
-                      />
-                    </div>
-                  </td>
-                  <td>{item.unitPrice ? `$${item.unitPrice.toLocaleString()}` : "—"}</td>
-                  <td>{item.subtotal ? `$${item.subtotal.toLocaleString()}` : "—"}</td>
-                  <td>
-                    <span
-                      className={`ti-quote-status ${
-                        item.calcStatus === "ok" ? "ti-quote-status--ok" : item.calcStatus === "error" ? "ti-quote-status--error" : ""
-                      }`.trim()}
-                      title={item.calcError}
-                    >
-                      <span className="ti-quote-status__dot" />
-                      <span>
-                        {item.calcStatus === "ok"
-                          ? "OK"
-                          : item.calcStatus === "error"
-                            ? "Error"
-                            : item.calcStatus === "pending"
-                              ? "Pendiente"
-                              : "Cotización"}
-                      </span>
-                    </span>
-                    {item.calcStatus === "error" && item.calcError ? (
-                      <div className="ti-field-note ti-pricing-line-error" style={{ color: "var(--danger)" }}>
-                        {item.calcError}
+                <Fragment key={item.id}>
+                  <tr
+                    className={activeQuoteItemId === item.id ? "ti-row-selected" : undefined}
+                    onClick={() => onSelectQuoteItem(item.id)}
+                  >
+                    <td>
+                      <div className="ti-pricing-line-order">
+                        <button
+                          className="ti-pricing-line-order__btn"
+                          onClick={(e) => { e.stopPropagation(); onMoveItemUp(item.id); }}
+                          disabled={idx === 0}
+                          title="Subir"
+                        >
+                          ▲
+                        </button>
+                        <span className="ti-pricing-line-order__index">{idx + 1}</span>
+                        <button
+                          className="ti-pricing-line-order__btn"
+                          onClick={(e) => { e.stopPropagation(); onMoveItemDown(item.id); }}
+                          disabled={idx === quoteItems.length - 1}
+                          title="Bajar"
+                        >
+                          ▼
+                        </button>
                       </div>
-                    ) : null}
-                  </td>
-                  <td className="ti-pricing-lines-actions-cell">
-                    <div className="actions-cell">
-                      <Button
-                        variant="secondary"
-                        className="ti-icon-button"
-                        onClick={(e) => { e.stopPropagation(); onCalculateItem(item.id); }}
-                        disabled={loadingActionId === item.id}
-                        title="Calcular linea"
-                        aria-label="Calcular linea"
+                    </td>
+                    <td>
+                      <div className="ti-quote-line-sku">
+                        <Select
+                          className="ti-pricing-line-sku-select"
+                          value={item.skuCode ?? ""}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => onUpdateQuoteItem(item.id, { skuCode: e.target.value, calcStatus: undefined })}
+                        >
+                          <option value="">Selecciona SKU</option>
+                          {skuOptions.map((sku) => (
+                            <option key={sku.code} value={sku.code}>
+                              {sku.code}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                    </td>
+                    <td>
+                      <Input
+                        value={item.roomAreaName ?? ""}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => onUpdateQuoteItem(item.id, { roomAreaName: e.target.value })}
+                        placeholder="Ej: Living, Dormitorio"
+                        style={{ width: "132px", fontSize: "0.8em" }}
+                        list="agrupador-suggestions"
+                      />
+                    </td>
+                    <td>
+                      <Input
+                        type="number"
+                        value={item.quantity}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => onUpdateQuoteItem(item.id, { quantity: e.target.value })}
+                        min="1"
+                        style={{ width: "64px" }}
+                      />
+                    </td>
+                    <td>
+                      <div className="ti-quote-line-size">
+                        <Input
+                          className="ti-pricing-line-dimension-input"
+                          type="number"
+                          value={item.widthM}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => onUpdateQuoteItem(item.id, { widthM: e.target.value })}
+                          step="0.1"
+                          min="0"
+                          style={{ width: "72px" }}
+                        />
+                        <Input
+                          className="ti-pricing-line-dimension-input"
+                          type="number"
+                          value={item.heightM}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => onUpdateQuoteItem(item.id, { heightM: e.target.value })}
+                          step="0.1"
+                          min="0"
+                          style={{ width: "72px" }}
+                        />
+                      </div>
+                    </td>
+                    <td>{item.unitPrice ? `$${item.unitPrice.toLocaleString()}` : "—"}</td>
+                    <td>{item.subtotal ? `$${item.subtotal.toLocaleString()}` : "—"}</td>
+                    <td>
+                      <span
+                        className={`ti-quote-status ${
+                          item.calcStatus === "ok" ? "ti-quote-status--ok" : item.calcStatus === "error" ? "ti-quote-status--error" : ""
+                        }`.trim()}
+                        title={item.calcError}
                       >
-                        {loadingActionId === item.id ? <Spinner size="sm" /> : <QuoteRowIcon kind="calculate" />}
-                      </Button>
-                      {quoteItems.length > 1 ? (
+                        <span className="ti-quote-status__dot" />
+                        <span>
+                          {item.calcStatus === "ok"
+                            ? "OK"
+                            : item.calcStatus === "error"
+                              ? "Error"
+                              : item.calcStatus === "pending"
+                                ? "Pendiente"
+                                : "Cotización"}
+                        </span>
+                      </span>
+                    </td>
+                    <td className="ti-pricing-lines-actions-cell">
+                      <div className="actions-cell">
                         <Button
                           variant="secondary"
-                          className="ti-icon-button ti-icon-button--danger"
-                          onClick={(e) => { e.stopPropagation(); onRemoveQuoteItem(item.id); }}
-                          title="Quitar linea"
-                          aria-label="Quitar linea"
+                          className="ti-icon-button"
+                          onClick={(e) => { e.stopPropagation(); onDuplicateQuoteItem(item.id); }}
+                          title="Duplicar línea"
+                          aria-label="Duplicar línea"
                         >
-                          <QuoteRowIcon kind="remove" />
+                          <QuoteRowIcon kind="duplicate" />
                         </Button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
+                        <Button
+                          variant="secondary"
+                          className="ti-icon-button"
+                          onClick={(e) => { e.stopPropagation(); onCalculateItem(item.id); }}
+                          disabled={loadingActionId === item.id}
+                          title="Calcular linea"
+                          aria-label="Calcular linea"
+                        >
+                          {loadingActionId === item.id ? <Spinner size="sm" /> : <QuoteRowIcon kind="calculate" />}
+                        </Button>
+                        {quoteItems.length > 1 ? (
+                          <Button
+                            variant="secondary"
+                            className="ti-icon-button ti-icon-button--danger"
+                            onClick={(e) => { e.stopPropagation(); onRemoveQuoteItem(item.id); }}
+                            title="Quitar linea"
+                            aria-label="Quitar linea"
+                          >
+                            <QuoteRowIcon kind="remove" />
+                          </Button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                  {item.calcStatus === "error" && item.calcError ? (
+                    <tr className="ti-pricing-line-error-row">
+                      <td colSpan={9}>
+                        <div className="ti-field-note ti-pricing-line-error" style={{ color: "var(--danger)" }}>
+                          {item.calcError}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
               ))}
             </tbody>
           </DataTable>

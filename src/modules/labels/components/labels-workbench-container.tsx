@@ -70,6 +70,10 @@ export function LabelsWorkbenchContainer({
           void labels.handleReprintById(id);
           labels.closeLabelPreview();
         }}
+        onDownloadZpl={(id) => {
+          void labels.handleDownloadZpl(id);
+        }}
+        onFetchZpl={labels.fetchZplContent}
       />
     </>
   );

@@ -2,7 +2,7 @@
 
 import { AutoScrapAssignmentDialog } from "./auto-scrap-assignment-dialog";
 import { SalesWorkbench } from "./sales-workbench";
-import type { CustomerOption, CutSheetPolicy, QuoteItemCategory } from "./pricing-workbench.shared-types";
+import type { CustomerOption, CutSheetPolicy, QuoteItemCategory } from "../../operations/shared/workbench.shared-types";
 import { useSalesWorkbench } from "./use-sales-workbench";
 
 type SkuOption = {
@@ -79,6 +79,7 @@ export function SalesWorkbenchContainer({
         onUpdateSaleCustomer={(id, customerId) => void sales.handleUpdateSaleCustomer(id, customerId)}
         onCancelSale={(id) => void sales.handleCancelSaleById(id)}
         onPrintSaleLabels={(id) => void sales.handlePrintSaleLabels(id)}
+        onDownloadSaleLabelsZpl={(id) => void sales.handleDownloadSaleLabelsZpl(id)}
         onOpenDocument={(url) => void sales.openAuthedHtmlDocument(url)}
         onOpenCutSheetPrompt={(id) => sales.openCutSheetPrompt(id)}
         onPrintCutSheet={(id, reserveSuggestedScraps) => void sales.handlePrintCutSheet(id, reserveSuggestedScraps)}

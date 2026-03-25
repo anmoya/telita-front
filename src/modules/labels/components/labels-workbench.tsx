@@ -13,7 +13,7 @@ import { ActionFooter } from "../../../shared/ui/patterns/action-footer";
 import { StatusPill } from "../../../shared/ui/patterns/status-pill";
 import { WorkbenchLayout } from "../../../shared/ui/patterns/workbench-layout";
 import { WorkbenchSection } from "../../../shared/ui/patterns/workbench-section";
-import type { BatchLabelResult, LabelRow } from "./pricing-workbench.shared-types";
+import type { BatchLabelResult, LabelRow } from "../../operations/shared/workbench.shared-types";
 
 type LabelFilterType = "ALL" | "SALE_CUT" | "SCRAP";
 

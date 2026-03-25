@@ -37,6 +37,8 @@ type BatchLine = {
 
 type QuoteBatch = {
   id: string;
+  quoteNumber: number;
+  quoteCode: string | null;
   status: "DRAFT" | "FINALIZED" | "EXPIRED" | "CANCELED";
   priceListName: string;
   customerId: string | null;
@@ -123,7 +125,7 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
   }, [batches, selectedBatchId]);
 
   const duplicateMutation = useMutationAction(async (id: string) =>
-    api.post<{ id?: string }>(`/quotes/batch/${id}/duplicate`, {})
+    api.post<{ id?: string; quoteCode?: string | null }>(`/quotes/batch/${id}/duplicate`, {})
   );
 
   const cancelMutation = useMutationAction(async (id: string) =>
@@ -134,7 +136,7 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
     setLoadingActionId(`dup-${id}`);
     try {
       const data = await duplicateMutation.run(id);
-      setStatus(`Cotización duplicada: ${data.id?.slice(0, 8) ?? "?"}`);
+      setStatus(`Cotización duplicada: ${data.quoteCode ?? data.id?.slice(0, 8) ?? "?"}`);
       await refetchBatches();
     } catch {
       setStatus("Error al duplicar");
@@ -163,6 +165,7 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
       const data = await api.post<{ quoteCode?: string; message?: string }>(
         "/sales/from-quote",
         {
+          quoteBatchId: batch.id,
           branchCode: "MAIN",
           priceListName: batch.priceListName,
           customerId: batch.customerId ?? undefined,
@@ -222,7 +225,7 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
                   <div className="ti-sales-summary">
                     <div className="ti-sales-summary__row">
                       <span>Cotización</span>
-                      <strong>{selectedBatch.id.slice(0, 8).toUpperCase()}</strong>
+                      <strong>{selectedBatch.quoteCode ?? selectedBatch.id.slice(0, 8).toUpperCase()}</strong>
                     </div>
                     <div className="ti-sales-summary__row">
                       <span>Estado</span>
@@ -364,6 +367,7 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
                 <thead>
                   <tr>
                     <th>Fecha</th>
+                    <th>Cotización</th>
                     <th>Cliente</th>
                     <th>Lista</th>
                     <th>Líneas</th>
@@ -381,6 +385,16 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
                       onClick={() => setSelectedBatchId(batch.id)}
                     >
                       <td style={{ fontSize: "0.82em" }}>{formatLocalDateTime(batch.createdAt)}</td>
+                      <td
+                        style={{
+                          fontSize: "0.82em",
+                          fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
+                          letterSpacing: "0.08em"
+                        }}
+                        title={batch.id}
+                      >
+                        {batch.quoteCode ?? batch.id.slice(0, 8).toUpperCase()}
+                      </td>
                       <td>{batch.customerName ?? "—"}</td>
                       <td style={{ fontSize: "0.82em" }}>{batch.priceListName}</td>
                       <td>{batch.lines.length}</td>
@@ -482,7 +496,7 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
           <div className="ti-pricing-footer-summary">
             <span className="ti-pricing-footer-summary__meta">Página {page} de {pageCount}</span>
             <span className="ti-pricing-footer-summary__meta">{totalBatches} cotización(es)</span>
-            {selectedBatch ? <span className="ti-pricing-footer-summary__meta">Seleccionada: {selectedBatch.id.slice(0, 8).toUpperCase()}</span> : null}
+            {selectedBatch ? <span className="ti-pricing-footer-summary__meta">Seleccionada: {selectedBatch.quoteCode ?? selectedBatch.id.slice(0, 8).toUpperCase()}</span> : null}
           </div>
         )}
         actions={(
@@ -502,6 +516,7 @@ export function QuoteBatchesForm({ accessToken, apiUrl, onNavigate, onEditBatch 
         {detailBatch ? (
           <>
             <div className="card" style={{ marginBottom: "0.75rem", fontSize: "0.9em", lineHeight: "1.7" }}>
+              <div>Cotización: <strong>{detailBatch.quoteCode ?? detailBatch.id.slice(0, 8).toUpperCase()}</strong></div>
               <div>Cliente: <strong>{detailBatch.customerName ?? "Sin cliente"}</strong></div>
               <div>Lista: <strong>{detailBatch.priceListName}</strong></div>
               {detailBatch.customerReference ? <div>Referencia: <strong>{detailBatch.customerReference}</strong></div> : null}

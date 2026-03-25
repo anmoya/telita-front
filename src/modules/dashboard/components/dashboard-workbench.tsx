@@ -7,8 +7,8 @@ import { Spinner } from "../../../shared/ui/primitives/spinner";
 import { formatLocalDateTime } from "../../../shared/time/date-service";
 import { WorkbenchLayout } from "../../../shared/ui/patterns/workbench-layout";
 import { WorkbenchSection } from "../../../shared/ui/patterns/workbench-section";
-import { AUDIT_ACTION_LABELS, ENTITY_TYPE_LABELS } from "./pricing-workbench.helpers";
-import type { AuditRow, DashboardKpis, MenuKey, PendingScrapRow } from "./pricing-workbench.shared-types";
+import { AUDIT_ACTION_LABELS, ENTITY_TYPE_LABELS } from "../../operations/shared/workbench.helpers";
+import type { AuditRow, DashboardKpis, MenuKey, PendingScrapRow } from "../../operations/shared/workbench.shared-types";
 
 type DashboardWorkbenchProps = {
   loadingMenu: boolean;

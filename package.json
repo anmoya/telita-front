@@ -11,7 +11,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "TSX_TSCONFIG_PATH=tsconfig.test.json node --loader ../telita-back/node_modules/tsx/dist/loader.mjs --test $(find src \\( -name '*.test.ts' -o -name '*.test.tsx' \\))",
+    "verify": "npm run build && npm run typecheck && npm test"
   },
   "dependencies": {
     "driver.js": "^1.4.0",

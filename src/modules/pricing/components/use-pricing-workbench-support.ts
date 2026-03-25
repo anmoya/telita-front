@@ -1,8 +1,8 @@
 "use client";
 
 import type { Dispatch, SetStateAction } from "react";
-import type { CustomerOption, QuoteItem, QuoteItemCategory } from "./pricing-workbench.shared-types";
-import type { QuoteScrapOpportunityRow } from "./pricing-workbench.types";
+import type { CustomerOption, QuoteItem, QuoteItemCategory } from "../../operations/shared/workbench.shared-types";
+import type { QuoteScrapOpportunityRow } from "../../operations/shared/workbench.types";
 
 type UsePricingWorkbenchSupportArgs = {
   apiUrl: string;
@@ -63,11 +63,42 @@ export function usePricingWorkbenchSupport({
     setCommercialAdjustmentPct,
     setInstallationAmount
 }: UsePricingWorkbenchSupportArgs) {
+  function cloneQuoteItemForDuplication(item: QuoteItem): QuoteItem {
+    return {
+      id: crypto.randomUUID(),
+      widthM: item.widthM,
+      heightM: item.heightM,
+      quantity: item.quantity,
+      description: item.description,
+      skuCode: item.skuCode,
+      categoryId: item.categoryId,
+      categoryName: item.categoryName,
+      lineNote: item.lineNote,
+      roomAreaName: item.roomAreaName
+    };
+  }
+
   function addQuoteItem() {
     setQuoteItems((current) => [
       ...current,
       { id: crypto.randomUUID(), widthM: "", heightM: "", quantity: "1", description: "" }
     ]);
+  }
+
+  function duplicateQuoteItem(id: string) {
+    const source = quoteItems.find((item) => item.id === id);
+    if (!source) return;
+
+    const duplicated = cloneQuoteItemForDuplication(source);
+    setQuoteItems((current) => {
+      const index = current.findIndex((item) => item.id === id);
+      if (index < 0) return current;
+      const next = [...current];
+      next.splice(index + 1, 0, duplicated);
+      return next;
+    });
+    setActiveQuoteItemId(duplicated.id);
+    setStatus("Línea duplicada. Revisa el SKU si necesitas una variante.");
   }
 
   function removeQuoteItem(id: string) {
@@ -335,6 +366,7 @@ export function usePricingWorkbenchSupport({
 
   return {
     addQuoteItem,
+    duplicateQuoteItem,
     removeQuoteItem,
     updateQuoteItem,
     resetQuoteWorkbench,

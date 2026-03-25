@@ -15,7 +15,7 @@ import { StatusPill } from "../../../shared/ui/patterns/status-pill";
 import { TotalsSummary } from "../../../shared/ui/patterns/totals-summary";
 import { WorkbenchLayout } from "../../../shared/ui/patterns/workbench-layout";
 import { WorkbenchSection } from "../../../shared/ui/patterns/workbench-section";
-import type { CustomerOption, CutSheetPolicy, QuoteItemCategory, SaleLineDraft, SaleLineRow, SaleRow, ScrapMatchRow } from "./pricing-workbench.shared-types";
+import type { CustomerOption, CutSheetPolicy, QuoteItemCategory, SaleLineDraft, SaleLineRow, SaleRow, ScrapMatchRow } from "../../operations/shared/workbench.shared-types";
 
 type SkuOption = {
   code: string;
@@ -64,6 +64,7 @@ type SalesWorkbenchProps = {
   onConfirmSale: (saleId: string) => void;
   onCancelSale: (saleId: string) => void;
   onPrintSaleLabels: (saleId: string) => void;
+  onDownloadSaleLabelsZpl: (saleId: string) => void;
   onOpenDocument: (url: string) => void;
   onOpenCutSheetPrompt: (saleId: string) => void;
   onPrintCutSheet: (saleId: string, reserveSuggestedScraps: boolean) => void;
@@ -170,6 +171,7 @@ export function SalesWorkbench({
   onConfirmSale,
   onCancelSale,
   onPrintSaleLabels,
+  onDownloadSaleLabelsZpl,
   onOpenDocument,
   onOpenCutSheetPrompt,
   onPrintCutSheet,
@@ -333,6 +335,13 @@ export function SalesWorkbench({
                         disabled={loadingActionId === selectedSale.id}
                       >
                         {loadingActionId === selectedSale.id ? <Spinner size="sm" /> : "Etiquetas"}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => onDownloadSaleLabelsZpl(selectedSale.id)}
+                        disabled={loadingActionId === `zpl-${selectedSale.id}`}
+                      >
+                        {loadingActionId === `zpl-${selectedSale.id}` ? <Spinner size="sm" /> : "Descargar ZPL"}
                       </Button>
                       <Button
                         variant="secondary"

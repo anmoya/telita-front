@@ -7,7 +7,7 @@ import { OptionCard } from "../../../shared/ui/patterns/option-card";
 import { StatusPill } from "../../../shared/ui/patterns/status-pill";
 import { TotalsSummary } from "../../../shared/ui/patterns/totals-summary";
 import { WorkbenchSection } from "../../../shared/ui/patterns/workbench-section";
-import type { QuoteScrapOpportunityRow } from "./pricing-workbench.types";
+import type { QuoteScrapOpportunityRow } from "../../operations/shared/workbench.types";
 
 type QuoteScrapOpportunityPanelProps = {
   quoteItemsCount: number;

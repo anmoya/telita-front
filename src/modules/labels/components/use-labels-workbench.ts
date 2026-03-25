@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import type { BatchLabelResult, LabelRow } from "./pricing-workbench.shared-types";
+import type { BatchLabelResult, LabelRow } from "../../operations/shared/workbench.shared-types";
 
 type LabelFilterType = "ALL" | "SALE_CUT" | "SCRAP";
 
@@ -218,6 +218,28 @@ export function useLabelsWorkbench({
     setLabelPreview(null);
   }
 
+  async function fetchZplContent(labelId: string): Promise<string> {
+    return fetchAuthedText(`${apiUrl}/labels/${labelId}/zpl`);
+  }
+
+  async function handleDownloadZpl(labelId: string) {
+    try {
+      const zplContent = await fetchZplContent(labelId);
+      const blob = new Blob([zplContent], { type: "text/plain; charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `etiqueta-${labelId.slice(0, 8)}.zpl`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setLabelStatus("Archivo ZPL descargado.");
+    } catch (error) {
+      setLabelStatus(error instanceof Error ? error.message : "No se pudo descargar el archivo ZPL.");
+    }
+  }
+
   useEffect(() => {
     if (activeMenu === "labels") void handleListLabels();
   }, [activeMenu, labelFilterType, labelPage]);
@@ -255,6 +277,8 @@ export function useLabelsWorkbench({
     toggleLabelSelection,
     openLabelPreview,
     handleReprintById,
-    closeLabelPreview
+    closeLabelPreview,
+    handleDownloadZpl,
+    fetchZplContent
   };
 }

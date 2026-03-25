@@ -13,8 +13,8 @@ import { ActionFooter } from "../../../shared/ui/patterns/action-footer";
 import { StatusPill } from "../../../shared/ui/patterns/status-pill";
 import { WorkbenchLayout } from "../../../shared/ui/patterns/workbench-layout";
 import { WorkbenchSection } from "../../../shared/ui/patterns/workbench-section";
-import { AUDIT_ACTION_LABELS, ENTITY_TYPE_LABELS } from "./pricing-workbench.helpers";
-import type { AuditRow } from "./pricing-workbench.shared-types";
+import { AUDIT_ACTION_LABELS, ENTITY_TYPE_LABELS } from "../../operations/shared/workbench.helpers";
+import type { AuditRow } from "../../operations/shared/workbench.shared-types";
 
 type AuditEntityFilter = "ALL" | "sale" | "cut_job" | "scrap" | "label" | "quote_batch";
 

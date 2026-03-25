@@ -3,7 +3,7 @@
 import { Button } from "../../../shared/ui/primitives/button";
 import { Dialog } from "../../../shared/ui/primitives/dialog";
 import { Spinner } from "../../../shared/ui/primitives/spinner";
-import type { AutoScrapAssignmentPreview } from "./pricing-workbench.types";
+import type { AutoScrapAssignmentPreview } from "../../operations/shared/workbench.types";
 
 type AutoScrapAssignmentDialogProps = {
   open: boolean;

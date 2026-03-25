@@ -1,45 +1,53 @@
 # AGENTS.md
 
-This file provides guidance to agents when working with code in this repository.
+Guia para agentes trabajando en `telita-front/`.
 
-## Commands
-- `npm run dev` - Start development server
-- `npm run build` - Production build
-- `npm run lint` - Run ESLint
-- `npm run typecheck` - TypeScript type checking
+## 1. Comandos
 
-## Project-Specific Rules
+- `npm run dev`
+- `npm run build`
+- `npm run typecheck`
+- `npm test`
+- `npm run verify`
 
-### Architecture Enforcement (ESLint)
-- **Date libraries**: Cannot import date-fns, dayjs, or luxon in `src/modules/*`. Use [`src/shared/time/date-service.ts`](src/shared/time/date-service.ts) instead.
-- **UI libraries**: Cannot import @radix-ui/*, antd, or @mui/* in `src/modules/*`. Use wrappers in `src/shared/ui/primitives/*`.
+## 2. Arquitectura que debe respetarse
 
-### Styling
-- Use custom CSS classes with `t-` prefix: `t-btn`, `t-btn-primary`, `t-btn-secondary`, `t-input`
-- All styling in [`src/app/globals.css`](src/app/globals.css) - no CSS-in-JS or Tailwind
-- CSS variables defined in `:root` (see globals.css lines 1-17)
+Regla base:
 
-### Client/Server Components
-- Add `"use client"` directive to components using React hooks (useState, useEffect, etc.)
-- Example: [`src/shared/ui/primitives/dialog.tsx`](src/shared/ui/primitives/dialog.tsx) line 1
+- `Route shell -> coordinator hook -> prop builders / domain hooks -> visual workbenches`
 
-### Date Handling
-- Use [`formatLocalDateTime()`](src/shared/time/date-service.ts:1) with default locale `es-CL`
+Interpretacion:
 
-### Authentication
-- Token stored in localStorage: `"telita_access_token"`
+- componentes grandes no deben volver a mezclar estado, routing, llamadas y render pesado;
+- `AppShell` y `OperationsWorkbench` deben permanecer como wrappers/coordinadores livianos;
+- la composicion compleja debe vivir en hooks o builders con nombres honestos;
+- los workbenches viven en su dominio real, no escondidos bajo `pricing`.
 
-### Documentation Rule
-- After any relevant change, update:
-  - `/home/alfonso/Dev/projects/telita/FRONTEND_DOC.md`
-  - `/home/alfonso/Dev/projects/telita/BACKEND_DOC.md`
-  - `/home/alfonso/Dev/projects/telita/DATABASE_DOC.md`
+## 3. Reglas obligatorias
 
-## References
-- Specs: `/home/alfonso/Dev/projects/telita/telita-docs/`
-- Architecture: `spec-07-replaceable-dependencies.md`
+- no reintroducir workbenches de `sales`, `cuts`, `scraps`, `audit`, `settings` o `labels` dentro de `pricing`;
+- no volver a convertir `operations-workbench.tsx` en componente omnibus;
+- cuando una pieza sea testeable sin DOM, preferir modelo puro o builder;
+- si un cambio toca coordinacion relevante del workbench, agregar o ajustar tests;
+- cerrar trabajo con `npm run verify`.
 
-## Notes
-- No test framework configured - no test scripts or files exist
-- Node.js >=22 <23, npm >=10 <11 (check package.json engines)
-- Next.js reactStrictMode enabled in next.config.ts
+## 4. Estado actual importante
+
+- `page.tsx` y `AppShell` ya no deben absorber logica de workbench;
+- `operations-workbench.tsx` delega composicion principal a `use-operations-workbench-entry.ts`;
+- el orden estable del repo es `build -> typecheck -> test`, y `npm run verify` ya lo encapsula;
+- existe base de tests para shell, router, builders y modelos puros.
+
+## 5. Antipatrones prohibidos
+
+- volver a colgar slices operativos completos desde `pricing` por conveniencia;
+- componentes coordinadores gigantes con demasiados `useState` cruzados;
+- contratos backend/frontend implícitos sin tocar docs cuando el cambio es importante;
+- cerrar cambios sin `verify`.
+
+## 6. Documentacion relevante
+
+- `../telita-docs/01-arquitectura/arquitectura-vigente-y-reglas-de-ejecucion.md`
+- `../telita-docs/04-specs/backlog-remediacion-tecnica.md`
+
+Si cambias arquitectura de shell, workbench o slices, actualiza `telita-docs/`.

@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { Button } from "../../../shared/ui/primitives/button";
 import { Dialog } from "../../../shared/ui/primitives/dialog";
-import type { QuoteItem } from "./pricing-workbench.shared-types";
+import type { QuoteItem } from "../../operations/shared/workbench.shared-types";
 
 type MarginBreakdownDialogProps = {
   open: boolean;

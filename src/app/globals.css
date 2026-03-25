@@ -2494,39 +2494,37 @@ body {
 
 .ti-pricing-lines-table th:nth-child(3),
 .ti-pricing-lines-table td:nth-child(3) {
-  width: 126px;
+  width: 142px;
 }
 
 .ti-pricing-lines-table th:nth-child(4),
 .ti-pricing-lines-table td:nth-child(4) {
-  width: 138px;
+  width: 78px;
 }
 
 .ti-pricing-lines-table th:nth-child(5),
 .ti-pricing-lines-table td:nth-child(5) {
-  width: 66px;
+  width: 156px;
 }
 
 .ti-pricing-lines-table th:nth-child(6),
 .ti-pricing-lines-table td:nth-child(6) {
-  width: 142px;
+  width: 108px;
 }
 
 .ti-pricing-lines-table th:nth-child(7),
-.ti-pricing-lines-table td:nth-child(7),
+.ti-pricing-lines-table td:nth-child(7) {
+  width: 112px;
+}
+
 .ti-pricing-lines-table th:nth-child(8),
 .ti-pricing-lines-table td:nth-child(8) {
-  width: 90px;
+  width: 94px;
 }
 
 .ti-pricing-lines-table th:nth-child(9),
 .ti-pricing-lines-table td:nth-child(9) {
-  width: 116px;
-}
-
-.ti-pricing-lines-table th:nth-child(10),
-.ti-pricing-lines-table td:nth-child(10) {
-  width: 88px;
+  width: 126px;
 }
 
 .ti-pricing-line-order {
@@ -2561,19 +2559,45 @@ body {
   font-size: 0.8em;
 }
 
+.ti-pricing-line-sku-select,
+.ti-pricing-line-dimension-input,
+.ti-workbench--pricing td .t-input:not(textarea) {
+  min-height: 42px;
+}
+
+.ti-workbench--pricing td .t-input,
+.ti-workbench--pricing td .t-select {
+  padding-top: 0.72rem;
+  padding-bottom: 0.72rem;
+}
+
+.ti-quote-line-size {
+  gap: 0.35rem;
+}
+
 .ti-pricing-line-category-select {
   width: 132px;
   font-size: 0.79em;
 }
 
 .ti-pricing-line-error {
-  margin-top: 0.24rem;
-  max-width: 115px;
+  margin: 0;
+  max-width: none;
   line-height: 1.2;
+}
+
+.ti-pricing-line-error-row td {
+  padding: 0.35rem 0.75rem 0.7rem;
+  border-top: none;
 }
 
 .ti-pricing-lines-actions-cell {
   white-space: nowrap;
+  vertical-align: middle;
+}
+
+.ti-pricing-lines-actions-cell .actions-cell {
+  align-items: center;
 }
 
 .ti-pricing-opportunity-launcher__body {

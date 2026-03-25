@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import type { AutoScrapAssignmentPreview } from "./pricing-workbench.types";
-import type { CutSheetPolicy, QuoteItemCategory, SaleLineCompatibleScrapsResponse, SaleLineDraft, SaleLineRow, SaleRow, ScrapMatchRow } from "./pricing-workbench.shared-types";
+import type { AutoScrapAssignmentPreview } from "../../operations/shared/workbench.types";
+import type { CutSheetPolicy, QuoteItemCategory, SaleLineCompatibleScrapsResponse, SaleLineDraft, SaleLineRow, SaleRow, ScrapMatchRow } from "../../operations/shared/workbench.shared-types";
 
 type UseSalesWorkbenchArgs = {
   apiUrl: string;
@@ -70,6 +70,18 @@ export function useSalesWorkbench({ apiUrl, accessToken, activeMenu, cutSheetPol
   async function openBatchPdf(labelIds: string[]) {
     if (labelIds.length === 0) return;
     await openAuthedHtmlDocument(`${apiUrl}/labels/batch-pdf?labelIds=${labelIds.join(",")}`);
+  }
+
+  function downloadTextFile(filename: string, content: string, mimeType = "text/plain;charset=utf-8") {
+    const blob = new Blob([content], { type: mimeType });
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(objectUrl);
   }
 
   async function handleListSales() {
@@ -485,6 +497,36 @@ export function useSalesWorkbench({ apiUrl, accessToken, activeMenu, cutSheetPol
     }
   }
 
+  async function handleDownloadSaleLabelsZpl(id: string) {
+    setLoadingActionId(`zpl-${id}`);
+    try {
+      const response = await authedFetch(`${apiUrl}/labels/sale/${id}/batch`, {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        setSalesStatus(body?.message ?? `Error HTTP ${response.status}`);
+        return;
+      }
+
+      const data = (await response.json()) as { labels: Array<{ labelId: string }> };
+      const labelIds = data.labels.map((label) => label.labelId);
+      if (labelIds.length === 0) {
+        setSalesStatus("La venta no generó etiquetas para descargar.");
+        return;
+      }
+
+      const zplContent = await fetchAuthedText(`${apiUrl}/labels/batch-zpl?labelIds=${labelIds.join(",")}`);
+      downloadTextFile(`telita-sale-${id.slice(0, 8)}-labels.zpl`, zplContent, "application/zpl");
+      setSalesStatus(`${labelIds.length} etiqueta(s) descargadas en ZPL.`);
+    } catch (err) {
+      setSalesStatus(`No se pudo descargar el ZPL. ${err instanceof Error ? err.message : "Error desconocido"}`);
+    } finally {
+      setLoadingActionId(null);
+    }
+  }
+
   async function handleUpdatePaymentSummary() {
     if (!saleId) return;
     const amountPaid = Number(amountPaidInput);
@@ -632,6 +674,7 @@ export function useSalesWorkbench({ apiUrl, accessToken, activeMenu, cutSheetPol
     handleConfirmSaleById,
     handleCancelSaleById,
     handlePrintSaleLabels,
+    handleDownloadSaleLabelsZpl,
     openAuthedHtmlDocument,
     docPreviewHtml,
     isCutSheetPromptOpen: Boolean(cutSheetPromptSaleId),

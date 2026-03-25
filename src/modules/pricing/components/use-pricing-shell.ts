@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import { fetchStatusLabels, type StatusLabelsByEntity } from "../../../shared/api/status-labels";
-import type { AuditRow, DashboardKpis, PendingScrapRow, QuoteRow } from "./pricing-workbench.shared-types";
+import type { AuditRow, DashboardKpis, PendingScrapRow, QuoteRow } from "../../operations/shared/workbench.shared-types";
 
 type UsePricingShellArgs = {
   apiUrl: string;
